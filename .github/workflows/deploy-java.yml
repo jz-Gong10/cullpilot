@@ -78,31 +78,67 @@ jobs:
             demo/agent
           echo "CULLPILOT_ARCHIVE=$archive" >> "$GITHUB_ENV"
 
-      - name: Upload and activate release over SSH
+      - name: Prepare SSH credentials
         env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          port="${DEPLOY_PORT:-22}"
-          archive_name="cullpilot-${GITHUB_SHA}.tar.gz"
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
           install -d -m 700 "$HOME/.ssh"
           printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/deploy_key"
           chmod 600 "$HOME/.ssh/deploy_key"
-          test -n "$DEPLOY_KNOWN_HOSTS"
+          if ! ssh-keygen -y -f "$HOME/.ssh/deploy_key" </dev/null >/dev/null 2>&1; then
+            echo "DEPLOY_SSH_KEY must be a complete, unencrypted OpenSSH private key." >&2
+            exit 1
+          fi
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 644 "$HOME/.ssh/known_hosts"
+
+      - name: Verify SSH login
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          port="${DEPLOY_PORT:-22}"
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o IdentityAgent=none -o IdentitiesOnly=yes -o PasswordAuthentication=no \
+            -i "$HOME/.ssh/deploy_key" -p "$port" "$DEPLOY_USER@$DEPLOY_HOST" \
+            'test "$(id -u)" -eq 0 && test -d /root/workspace/aic'
+
+      - name: Upload release archive
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          port="${DEPLOY_PORT:-22}"
+          archive_name="cullpilot-${GITHUB_SHA}.tar.gz"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o IdentityAgent=none -o IdentitiesOnly=yes -o PasswordAuthentication=no \
             -i "$HOME/.ssh/deploy_key" -p "$port" "$DEPLOY_USER@$DEPLOY_HOST" \
             'install -d -m 0700 /root/workspace/aic/incoming'
           scp -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o IdentityAgent=none -o IdentitiesOnly=yes -o PasswordAuthentication=no \
             -i "$HOME/.ssh/deploy_key" -P "$port" \
             "$CULLPILOT_ARCHIVE" \
             "$DEPLOY_USER@$DEPLOY_HOST:/root/workspace/aic/incoming/$archive_name"
+
+      - name: Activate release
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          port="${DEPLOY_PORT:-22}"
+          archive_name="cullpilot-${GITHUB_SHA}.tar.gz"
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o IdentityAgent=none -o IdentitiesOnly=yes -o PasswordAuthentication=no \
             -i "$HOME/.ssh/deploy_key" -p "$port" "$DEPLOY_USER@$DEPLOY_HOST" \
             "CULLPILOT_RELEASE_ID='$GITHUB_SHA' CULLPILOT_RELEASE_ARCHIVE='/root/workspace/aic/incoming/$archive_name' bash -s" \
             < CullPilot/deploy/update-server.sh
