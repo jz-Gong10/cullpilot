@@ -1,0 +1,18 @@
+[Unit]
+Description=CullPilot Spring Boot backend
+After=network.target cullpilot-python.service
+Wants=cullpilot-python.service
+
+[Service]
+Type=simple
+User=cullpilot
+Group=cullpilot
+WorkingDirectory=/srv/cullpilot/app/CullPilot/backend-java
+EnvironmentFile=/etc/cullpilot/cullpilot.env
+ExecStart=/usr/bin/java -jar /srv/cullpilot/app/CullPilot/backend-java/target/cullpilot-backend-0.0.1-SNAPSHOT.jar
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

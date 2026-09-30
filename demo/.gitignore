@@ -1,0 +1,10 @@
+# API 密钥 (勿提交)
+.env
+__pycache__/
+*.pyc
+.DS_Store
+models/
+!models/
+!models/model_manifest.json
+data/.semantic_cache/
+data/.analysis_cache/

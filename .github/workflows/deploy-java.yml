@@ -1,0 +1,74 @@
+name: Build and deploy CullPilot
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cullpilot-production
+  cancel-in-progress: false
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'CullPilot/backend-java/**'
+      - 'CullPilot/python-api/**'
+      - 'CullPilot/deploy/**'
+      - 'demo/agent/**'
+      - 'demo/tests/**'
+      - 'demo/tools/**'
+      - 'CullPilot/backend-java/pom.xml'
+      - '.github/workflows/deploy-java.yml'
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Build and test Java
+        working-directory: CullPilot/backend-java
+        run: mvn -B test package
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Test Python API and algorithms
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r CullPilot/python-api/requirements.txt
+          python -m pytest -q CullPilot/python-api/tests demo/tests/test_pose_grouping.py
+
+  deploy:
+    needs: verify
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update the server over SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_APP_DIR: ${{ secrets.DEPLOY_APP_DIR }}
+        run: |
+          set -euo pipefail
+          port="${DEPLOY_PORT:-22}"
+          app_dir="${DEPLOY_APP_DIR:-/srv/cullpilot/app}"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/deploy_key"
+          chmod 600 "$HOME/.ssh/deploy_key"
+          ssh-keyscan -p "$port" -H "$DEPLOY_HOST" >> "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/deploy_key" -p "$port" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "CULLPILOT_APP_DIR='$app_dir' bash '$app_dir/CullPilot/deploy/update-server.sh'"

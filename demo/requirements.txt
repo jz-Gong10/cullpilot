@@ -1,0 +1,3 @@
+# CullPilot uses the Python service dependency files as the source of truth.
+# This convenience file keeps old local install commands working.
+-r ../CullPilot/python-api/requirements.txt

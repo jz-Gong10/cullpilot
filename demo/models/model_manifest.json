@@ -1,0 +1,107 @@
+{
+  "model_root": ".",
+  "files": [
+    {
+      "role": "deepface",
+      "path": "deepface_home/.deepface/weights/age_model_weights.pth",
+      "size": 538708382,
+      "sha256": "1b45eb733934628be5be80dbffeccfed9cf40da18454098f456fadc19ed39fba"
+    },
+    {
+      "role": "deepface",
+      "path": "deepface_home/.deepface/weights/facenet_weights.pth",
+      "size": 91538382,
+      "sha256": "4e29ce3ac0dc8ee52fb5d8b8eb9560d2316ddca46ca0f3655e3b6a3a2ae81c4b"
+    },
+    {
+      "role": "deepface",
+      "path": "deepface_home/.deepface/weights/facial_expression_model_weights.pth",
+      "size": 5949382,
+      "sha256": "145a56e2e1f74bc3096bf5ef0091a60c92fafefce21cbe227e0562bd716f0045"
+    },
+    {
+      "role": "deepface",
+      "path": "deepface_home/.deepface/weights/gender_model_weights.pth",
+      "size": 537086090,
+      "sha256": "e7b9b6d206371357b52af0a2a59ab97d63effb63ad9c4be95d48efa9171f6547"
+    },
+    {
+      "role": "deepface",
+      "path": "deepface_home/.deepface/weights/vgg_face_weights.pth",
+      "size": 580022362,
+      "sha256": "17a7821521e0effa44dd4003bcd80787a0ed082ec68649328fe01f1cd80d24c1"
+    },
+    {
+      "role": "chinese_clip",
+      "path": "chinese_clip/clip_cn_vit-b-16.pt",
+      "size": 753196934,
+      "sha256": "5997ef32c50de18f3ac06eb5d746c324a639053c3bed8f2986f97ebb22b2ecde"
+    },
+    {
+      "role": "dinov2",
+      "path": "dinov2-small/config.json",
+      "size": 547,
+      "sha256": "1809f83e3bdb1609a501a610ad4a742f4fd8ae44d72ca4aa0df52d1f2ac8628d"
+    },
+    {
+      "role": "dinov2",
+      "path": "dinov2-small/model.safetensors",
+      "size": 88249960,
+      "sha256": "ae1e99fcefd534ed978cdeb8326f08030c96e28b7a81ffcbc98a857c84d14be1"
+    },
+    {
+      "role": "dinov2",
+      "path": "dinov2-small/preprocessor_config.json",
+      "size": 436,
+      "sha256": "14e780d86fa1861f8751f868d7f45425b5feb55c38ca26f152ca5097ab30f828"
+    },
+    {
+      "role": "mediapipe",
+      "path": "mediapipe/face_detection_short_range.tflite",
+      "size": 229714,
+      "sha256": "bbff11cebd1eb27a1e004cae0b0e63ec8c551cbf34a4451148b4908b8db3eca8"
+    },
+    {
+      "role": "mediapipe",
+      "path": "mediapipe/face_detection_full_range_sparse.tflite",
+      "size": 676746,
+      "sha256": "2c3728e6da56f21e21a320433396fb06d40d9088f2247c05e5635a688d45dfe1"
+    },
+    {
+      "role": "mediapipe",
+      "path": "mediapipe/face_landmark.tflite",
+      "size": 1242398,
+      "sha256": "1055cb9d4a9ca8b8c688902a3a5194311138ba256bcc94e336d8373a5f30c814"
+    },
+    {
+      "role": "mediapipe",
+      "path": "mediapipe/face_landmark_with_attention.tflite",
+      "size": 2495106,
+      "sha256": "e06a804e0144f9929eda782122916b35d60c697c3c9344013ca2bbe76a6ce2b4"
+    },
+    {
+      "role": "mediapipe",
+      "path": "mediapipe/pose_detection.tflite",
+      "size": 2959046,
+      "sha256": "9ba9dd3d42efaaba86b4ff0122b06f29c4122e756b329d89dca1e297fd8f866c"
+    },
+    {
+      "role": "mediapipe",
+      "path": "mediapipe/pose_landmark_full.tflite",
+      "size": 6440512,
+      "sha256": "e9a5c5cb17f736fafd4c2ec1da3b3d331d6edbe8a0d32395855aeb2cdfd64b9f"
+    },
+    {
+      "role": "mediapipe",
+      "path": "mediapipe/palm_detection_full.tflite",
+      "size": 2339846,
+      "sha256": "1b14e9422c6ad006cde6581a46c8b90dd573c07ab7f3934b5589e7cea3f89a54"
+    },
+    {
+      "role": "mediapipe",
+      "path": "mediapipe/hand_landmark_full.tflite",
+      "size": 5478917,
+      "sha256": "11c272b891e1a99ab034208e23937a8008388cf11ed2a9d776ed3d01d0ba00e3"
+    }
+  ]
+}

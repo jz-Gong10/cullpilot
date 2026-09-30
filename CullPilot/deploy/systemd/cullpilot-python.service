@@ -1,0 +1,17 @@
+[Unit]
+Description=CullPilot Python analysis API
+After=network.target
+
+[Service]
+Type=simple
+User=cullpilot
+Group=cullpilot
+WorkingDirectory=/srv/cullpilot/app
+EnvironmentFile=/etc/cullpilot/cullpilot.env
+ExecStart=/srv/cullpilot/venv/bin/uvicorn app.main:app --app-dir /srv/cullpilot/app/CullPilot/python-api --host 127.0.0.1 --port 8001
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,40 @@
+# Java build output
+**/target/
+
+# Python environments and caches
+**/.venv/
+**/venv/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+
+# Local configuration and runtime data
+**/.env
+**/.env.*
+!**/.env.example
+CullPilot/data/*
+!CullPilot/data/.gitkeep
+CullPilot/storage/*
+!CullPilot/storage/.gitkeep
+
+# Model files stay outside the source repository.
+**/models/
+**/huggingface/
+**/.deepface/
+*.pt
+*.pth
+*.h5
+*.safetensors
+*.tflite
+*.onnx
+
+# Keep only the portable inventory; model weights remain outside Git.
+!demo/models/
+!demo/models/model_manifest.json
+
+# IDE and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

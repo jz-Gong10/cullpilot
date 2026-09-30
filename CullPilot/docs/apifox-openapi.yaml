@@ -1,0 +1,2009 @@
+openapi: 3.0.3
+info:
+  title: CullPilot 后端接口
+  version: 1.0.0
+  description: CullPilot 图片筛选系统的业务接口。Apifox 请求统一访问 Java 服务，Java 服务再调用 Python AI API。
+servers:
+  - url: http://localhost:8080
+    description: 本地开发环境
+security:
+  - BearerAuth: []
+tags:
+  - name: 服务健康
+    description: Java 后端服务健康检查
+  - name: 项目管理
+    description: 项目的创建、查询、设置修改和删除
+  - name: 用户认证
+    description: 注册、登录、当前用户和退出登录
+  - name: 图片资源
+    description: 图片上传、查询、预览和人工决策
+  - name: 分析任务
+    description: 启动、查询、取消和重试图片分析任务，以及查询项目汇总
+  - name: AI 分组
+    description: 查询图片相似分组与组内 AI 排名
+  - name: 图片导出
+    description: 创建导出任务、查询状态和下载 ZIP
+  - name: 筛选要求
+    description: 将用户自然语言要求转换为可预览的筛选策略
+paths:
+  /api/v1/health:
+    get:
+      tags:
+        - 服务健康
+      summary: 检查 Java 后端是否可用
+      operationId: getBackendHealth
+      security: []
+      responses:
+        '200':
+          description: 服务正常
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/v1/auth/register:
+    post:
+      tags:
+        - 用户认证
+      summary: 注册用户
+      operationId: registerUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              email: user@example.com
+              password: Password123!
+              displayName: 图片筛选用户
+      responses:
+        '201':
+          description: 注册成功并自动登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponseEnvelope'
+        '409':
+          description: 邮箱已经注册
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 注册参数校验失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/login:
+    post:
+      tags:
+        - 用户认证
+      summary: 用户登录
+      operationId: loginUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: user@example.com
+              password: Password123!
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponseEnvelope'
+        '401':
+          description: 邮箱或密码错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/me:
+    get:
+      tags:
+        - 用户认证
+      summary: 获取当前用户
+      operationId: getCurrentUser
+      responses:
+        '200':
+          description: 当前用户信息
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponseEnvelope'
+        '401':
+          description: 未登录或 Token 已过期
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/logout:
+    post:
+      tags:
+        - 用户认证
+      summary: 退出登录
+      operationId: logoutUser
+      responses:
+        '200':
+          description: 退出成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogoutResponseEnvelope'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/projects:
+    post:
+      tags:
+        - 项目管理
+      summary: 创建项目
+      operationId: createProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+            example:
+              name: 2026 Spring Trip Photos
+              settings:
+                keepPerGroup: 2
+                strictness: standard
+                contentMode: auto
+                weights: {}
+                constraints: {}
+                privacy:
+                  sendThumbnailsToProvider: false
+                  stripGpsOnExport: true
+      responses:
+        '201':
+          description: 项目创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponseEnvelope'
+        '422':
+          description: 请求参数校验失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: 服务器内部错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      tags:
+        - 项目管理
+      summary: 查询项目列表
+      operationId: listProjects
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: status
+          in: query
+          required: false
+          description: 按项目状态筛选。
+          schema:
+            $ref: '#/components/schemas/ProjectStatus'
+        - name: sort
+          in: query
+          required: false
+          description: 排序表达式，支持 name、createdAt、updatedAt 字段。
+          schema:
+            type: string
+            default: createdAt:desc
+            example: createdAt:desc
+      responses:
+        '200':
+          description: 项目分页列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectPageResponseEnvelope'
+        '400':
+          description: 查询参数无效
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: 服务器内部错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/projects/{projectId}:
+    get:
+      tags:
+        - 项目管理
+      summary: 查询项目详情
+      operationId: getProject
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: 项目详情
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponseEnvelope'
+        '404':
+          description: 项目不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: 服务器内部错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - 项目管理
+      summary: 删除项目
+      operationId: deleteProject
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '202':
+          description: 项目删除请求已受理
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteProjectResponseEnvelope'
+        '404':
+          description: 项目不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 项目删除任务已在执行
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: 服务器内部错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/projects/{projectId}/settings:
+    patch:
+      tags:
+        - 项目管理
+      summary: 修改项目设置
+      operationId: updateProjectSettings
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectSettingsPatch'
+            example:
+              keepPerGroup: 3
+              strictness: loose
+              contentMode: mixed
+      responses:
+        '200':
+          description: 项目设置修改成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponseEnvelope'
+        '404':
+          description: 项目不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 当前项目状态不允许修改
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 项目设置无效
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: 服务器内部错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/projects/{projectId}/parse-instruction:
+    post:
+      tags:
+        - 筛选要求
+      summary: 解析用户筛选要求
+      description: |
+        只返回策略预览，不会修改项目设置，也不会启动分析。text 为空时，分析阶段会按图片类型自动使用人像或风景默认参数。
+        前端确认策略后，应继续调用 PATCH /api/v1/projects/{projectId}/settings 保存，再启动分析。
+      operationId: parseSelectionInstruction
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParseInstructionRequest'
+            example:
+              text: 每组保留两张最清晰、人物睁眼的照片
+              allowedFeatures:
+                - sharpness
+                - eyesOpen
+                - keepPerGroup
+      responses:
+        '200':
+          description: 筛选要求解析成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParseInstructionResponseEnvelope'
+        '404':
+          description: 项目不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: 筛选要求解析服务不可用
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/projects/{projectId}/assets:
+    post:
+      tags:
+        - 图片资源
+      summary: 批量上传图片
+      operationId: uploadAssets
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - files
+              properties:
+                files:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    format: binary
+                  description: 图片文件，支持 JPEG、PNG、WebP，单个文件最大 20 MB。可一次选择多个文件。
+                file:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: 兼容旧客户端的文件字段；通常使用 files。
+      responses:
+        '201':
+          description: 上传完成，允许部分成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadBatchResponseEnvelope'
+        '404':
+          description: 项目不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: 文件超过大小限制
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: 不支持的图片格式
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 整批文件均上传失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      tags:
+        - 图片资源
+      summary: 查询项目图片列表
+      operationId: listProjectAssets
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: decision
+          in: query
+          required: false
+          description: 用户决策筛选。
+          schema:
+            type: string
+            enum: [keep, review, reject]
+        - name: recommendation
+          in: query
+          required: false
+          description: 系统推荐筛选。
+          schema:
+            type: string
+            enum: [keep, review, reject]
+        - name: groupId
+          in: query
+          required: false
+          description: 按分组 ID 筛选。
+          schema:
+            type: string
+            format: uuid
+        - name: analysisStatus
+          in: query
+          required: false
+          description: 按分析状态筛选。
+          schema:
+            type: string
+            enum: [pending, processing, completed, failed]
+        - name: sort
+          in: query
+          required: false
+          description: 排序表达式，支持 createdAt、updatedAt、sizeBytes、originalName。
+          schema:
+            type: string
+            default: createdAt:desc
+            example: createdAt:asc
+      responses:
+        '200':
+          description: 图片分页列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPageResponseEnvelope'
+        '404':
+          description: 项目不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/assets/{assetId}:
+    get:
+      tags:
+        - 图片资源
+      summary: 查询图片详情
+      operationId: getAsset
+      parameters:
+        - $ref: '#/components/parameters/AssetId'
+      responses:
+        '200':
+          description: 图片详情
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetResponseEnvelope'
+        '404':
+          description: 图片不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/assets/{assetId}/decision:
+    patch:
+      tags:
+        - 图片资源
+      summary: Update user decision
+      operationId: updateAssetDecision
+      parameters:
+        - $ref: '#/components/parameters/AssetId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDecisionRequest'
+      responses:
+        '200':
+          description: Decision updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetResponseEnvelope'
+        '404':
+          description: Asset not found or not owned by current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/assets/{assetId}/thumbnail:
+    get:
+      tags:
+        - 图片资源
+      summary: 获取图片缩略图
+      operationId: getAssetThumbnail
+      parameters:
+        - $ref: '#/components/parameters/AssetId'
+      responses:
+        '200':
+          description: JPEG 缩略图二进制流
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: 图片或缩略图不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/assets/{assetId}/original:
+    get:
+      tags:
+        - 图片资源
+      summary: 获取原图
+      operationId: getAssetOriginal
+      parameters:
+        - $ref: '#/components/parameters/AssetId'
+      responses:
+        '200':
+          description: 原图二进制流
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: 图片或原图不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/projects/{projectId}/analyze:
+    post:
+      tags:
+        - 分析任务
+      summary: 启动图片分析
+      operationId: startProjectAnalysis
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeRequest'
+            example:
+              force: false
+              rebuildGroups: true
+      responses:
+        '202':
+          description: 分析任务已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponseEnvelope'
+        '400':
+          description: 项目没有图片
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 项目已有运行中的分析任务
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/jobs/{jobId}:
+    get:
+      tags:
+        - 分析任务
+      summary: 查询分析任务
+      operationId: getJob
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: 任务详情
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponseEnvelope'
+        '404':
+          description: 任务不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/jobs/{jobId}/cancel:
+    post:
+      tags:
+        - 分析任务
+      summary: 取消分析任务
+      operationId: cancelJob
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: 任务已取消
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponseEnvelope'
+        '409':
+          description: 当前任务状态不允许取消
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/jobs/{jobId}/retry:
+    post:
+      tags:
+        - 分析任务
+      summary: 重试分析任务
+      operationId: retryJob
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '202':
+          description: 重试任务已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponseEnvelope'
+        '409':
+          description: 当前任务状态不允许重试
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/projects/{projectId}/summary:
+    get:
+      tags:
+        - 分析任务
+      summary: 查询项目分析汇总
+      operationId: getProjectSummary
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: 项目分析汇总
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectSummaryResponseEnvelope'
+        '404':
+          description: 项目不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/projects/{projectId}/export:
+    post:
+      tags:
+        - 图片导出
+      summary: 创建导出任务
+      operationId: createExport
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateExportRequest'
+            example:
+              selection: keepAndReview
+              copyImages: true
+              stripGps: true
+              includeManifest: true
+              manifestFormat: csv
+      responses:
+        '202':
+          description: 导出任务已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportResponseEnvelope'
+        '404':
+          description: 项目不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 导出参数无效
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/exports/{exportId}:
+    get:
+      tags:
+        - 图片导出
+      summary: 查询导出任务
+      operationId: getExport
+      parameters:
+        - $ref: '#/components/parameters/ExportId'
+      responses:
+        '200':
+          description: 导出任务状态
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportResponseEnvelope'
+        '404':
+          description: 导出任务不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/exports/{exportId}/download:
+    get:
+      tags:
+        - 图片导出
+      summary: 下载导出压缩包
+      operationId: downloadExport
+      parameters:
+        - $ref: '#/components/parameters/ExportId'
+      responses:
+        '200':
+          description: 导出 ZIP 文件
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: 导出任务不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 导出任务尚未完成
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/projects/{projectId}/groups:
+    get:
+      tags:
+        - AI 分组
+      summary: 查询项目的图片分组
+      operationId: listAssetGroups
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: 分页分组列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupPageEnvelope'
+        '404':
+          description: 项目不存在或不属于当前用户
+
+  /api/v1/groups/{groupId}/assets:
+    get:
+      tags:
+        - AI 分组
+      summary: 查询分组内图片和 AI 排名
+      operationId: listGroupAssets
+      parameters:
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: 按 rank 升序的图片列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPageResponseEnvelope'
+        '404':
+          description: 分组不存在或不属于当前用户
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-token
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      description: 项目 UUID。
+      schema:
+        type: string
+        format: uuid
+      example: 550e8400-e29b-41d4-a716-446655440000
+    AssetId:
+      name: assetId
+      in: path
+      required: true
+      description: 图片资源 UUID。
+      schema:
+        type: string
+        format: uuid
+      example: 550e8400-e29b-41d4-a716-446655440001
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      description: 分析任务 UUID。
+      schema:
+        type: string
+        format: uuid
+      example: 550e8400-e29b-41d4-a716-446655440002
+    GroupId:
+      name: groupId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ExportId:
+      name: exportId
+      in: path
+      required: true
+      description: 导出任务 UUID
+      schema:
+        type: string
+        format: uuid
+      example: 550e8400-e29b-41d4-a716-446655440003
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: 相同项目内用于安全重试启动请求的幂等键。
+      schema:
+        type: string
+        maxLength: 200
+    Page:
+      name: page
+      in: query
+      required: false
+      description: 页码，从 1 开始。
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        default: 1
+    PageSize:
+      name: pageSize
+      in: query
+      required: false
+      description: 每页返回的数据条数。
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 100
+        default: 50
+
+  schemas:
+    AnalysisStatus:
+      type: string
+      enum:
+        - pending
+        - processing
+        - completed
+        - failed
+    AssetDecision:
+      type: string
+      enum:
+        - keep
+        - review
+        - reject
+    AssetRecommendation:
+      type: string
+      nullable: true
+      enum:
+        - keep
+        - review
+        - reject
+    Group:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        projectId: {type: string, format: uuid}
+        groupNo: {type: integer}
+        groupType: {type: string}
+        hasFace: {type: boolean}
+        assetCount: {type: integer}
+        confidence: {type: number, format: double}
+        averageSimilarity: {type: number, format: double}
+        maxDistance: {type: number, format: double}
+        timeRange:
+          type: object
+          properties:
+            from: {type: string, format: date-time, nullable: true}
+            to: {type: string, format: date-time, nullable: true}
+        reasons:
+          type: array
+          items: {type: string}
+        recommendedAssetIds:
+          type: array
+          items: {type: string, format: uuid}
+    GroupPageEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items: {$ref: '#/components/schemas/Group'}
+            page: {type: integer}
+            pageSize: {type: integer}
+            total: {type: integer}
+        meta: {$ref: '#/components/schemas/ApiMeta'}
+    Asset:
+      type: object
+      required:
+        - id
+        - projectId
+        - originalName
+        - mimeType
+        - sizeBytes
+        - width
+        - height
+        - sha256
+        - analysisStatus
+        - decision
+        - recommendation
+        - thumbnailUrl
+        - originalUrl
+        - exif
+        - quality
+        - version
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        originalName:
+          type: string
+        mimeType:
+          type: string
+          enum:
+            - image/jpeg
+            - image/png
+            - image/webp
+        sizeBytes:
+          type: integer
+          format: int64
+        width:
+          type: integer
+        height:
+          type: integer
+        sha256:
+          type: string
+          description: 原图内容的 SHA-256 哈希。
+        analysisStatus:
+          $ref: '#/components/schemas/AnalysisStatus'
+        decision:
+          $ref: '#/components/schemas/AssetDecision'
+        recommendation:
+          $ref: '#/components/schemas/AssetRecommendation'
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+        rank:
+          type: integer
+          nullable: true
+          description: 组内 AI 排名，从 1 开始
+        recommendScore:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
+        recommendReasons:
+          type: array
+          items: {type: string}
+        membershipReason:
+          type: string
+          nullable: true
+        features:
+          type: object
+          description: 可读的技术特征摘要，不包含原始图片路径或人脸向量
+        thumbnailUrl:
+          type: string
+        originalUrl:
+          type: string
+        exif:
+          type: object
+          description: EXIF 摘要，当前为空对象，后续分析模块补充。
+        quality:
+          type: object
+          description: 图片质量结果，当前为空对象，后续分析模块补充。
+        version:
+          type: integer
+          format: int64
+          description: Current optimistic-lock version
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    UpdateDecisionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - decision
+        - expectedVersion
+      properties:
+        decision:
+          $ref: '#/components/schemas/AssetDecision'
+        expectedVersion:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Version returned by the last asset query
+    AcceptedAsset:
+      type: object
+      required:
+        - id
+        - originalName
+        - mimeType
+        - sizeBytes
+        - width
+        - height
+        - analysisStatus
+        - decision
+        - thumbnailUrl
+        - originalUrl
+      properties:
+        id:
+          type: string
+          format: uuid
+        originalName:
+          type: string
+        mimeType:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        width:
+          type: integer
+        height:
+          type: integer
+        analysisStatus:
+          $ref: '#/components/schemas/AnalysisStatus'
+        decision:
+          $ref: '#/components/schemas/AssetDecision'
+        recommendation:
+          $ref: '#/components/schemas/AssetRecommendation'
+        thumbnailUrl:
+          type: string
+        originalUrl:
+          type: string
+    DuplicateAsset:
+      type: object
+      required:
+        - originalName
+        - sha256
+        - existingAssetId
+      properties:
+        originalName:
+          type: string
+        sha256:
+          type: string
+        existingAssetId:
+          type: string
+          format: uuid
+    FailedAsset:
+      type: object
+      required:
+        - originalName
+        - code
+        - message
+      properties:
+        originalName:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+    UploadBatch:
+      type: object
+      required:
+        - batchId
+        - accepted
+        - duplicates
+        - failed
+      properties:
+        batchId:
+          type: string
+          format: uuid
+        accepted:
+          type: array
+          items:
+            $ref: '#/components/schemas/AcceptedAsset'
+        duplicates:
+          type: array
+          items:
+            $ref: '#/components/schemas/DuplicateAsset'
+        failed:
+          type: array
+          items:
+            $ref: '#/components/schemas/FailedAsset'
+    AssetPage:
+      type: object
+      required:
+        - items
+        - page
+        - pageSize
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Asset'
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+          format: int64
+    AssetResponseEnvelope:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          $ref: '#/components/schemas/Asset'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+    AssetPageResponseEnvelope:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          $ref: '#/components/schemas/AssetPage'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+    UploadBatchResponseEnvelope:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          $ref: '#/components/schemas/UploadBatch'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+    JobStatus:
+      type: string
+      enum:
+        - queued
+        - running
+        - succeeded
+        - partialFailed
+        - failed
+        - cancelled
+    JobType:
+      type: string
+      enum:
+        - analysis
+    AnalyzeRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        force:
+          type: boolean
+          default: false
+          description: 是否重新处理已经完成的图片。
+        rebuildGroups:
+          type: boolean
+          default: true
+          description: 是否重新生成相似图片分组。
+    JobError:
+      type: object
+      required:
+        - stage
+        - code
+        - message
+        - createdAt
+      properties:
+        assetId:
+          type: string
+          format: uuid
+          nullable: true
+        stage:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    Job:
+      type: object
+      required:
+        - id
+        - type
+        - status
+        - progress
+        - currentStage
+        - processedCount
+        - totalCount
+        - errorCount
+        - createdAt
+        - errors
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/JobType'
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        currentStage:
+          type: string
+          example: reading
+        processedCount:
+          type: integer
+        totalCount:
+          type: integer
+        errorCount:
+          type: integer
+        errorMessage:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobError'
+    JobResponseEnvelope:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          $ref: '#/components/schemas/Job'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+    CreateExportRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - selection
+      properties:
+        selection:
+          type: string
+          enum: [keep, keepAndReview]
+        copyImages:
+          type: boolean
+          default: true
+        stripGps:
+          type: boolean
+          description: 指定时覆盖项目隐私设置；重新编码会移除所有 EXIF 元数据
+        includeManifest:
+          type: boolean
+          default: true
+        manifestFormat:
+          type: string
+          enum: [csv]
+          default: csv
+    ExportResponse:
+      type: object
+      required:
+        - id
+        - projectId
+        - status
+        - selection
+        - progress
+        - processedCount
+        - totalCount
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed]
+        selection:
+          type: string
+          enum: [keep, keepAndReview]
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        processedCount:
+          type: integer
+        totalCount:
+          type: integer
+        errorMessage:
+          type: string
+          nullable: true
+        downloadUrl:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+    ExportResponseEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/ExportResponse'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+    DecisionCounts:
+      type: object
+      required:
+        - keep
+        - review
+        - reject
+      properties:
+        keep:
+          type: integer
+          format: int64
+        review:
+          type: integer
+          format: int64
+        reject:
+          type: integer
+          format: int64
+    ProjectSummary:
+      type: object
+      required:
+        - projectId
+        - status
+        - assetCount
+        - analyzedCount
+        - groupCount
+        - decisionCounts
+        - recommendationCounts
+        - warnings
+      properties:
+        projectId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/ProjectStatus'
+        assetCount:
+          type: integer
+          format: int64
+        analyzedCount:
+          type: integer
+          format: int64
+        groupCount:
+          type: integer
+          format: int64
+        decisionCounts:
+          $ref: '#/components/schemas/DecisionCounts'
+        recommendationCounts:
+          $ref: '#/components/schemas/DecisionCounts'
+        activeJobId:
+          type: string
+          format: uuid
+          nullable: true
+        warnings:
+          type: array
+          items:
+            type: string
+    ProjectSummaryResponseEnvelope:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          $ref: '#/components/schemas/ProjectSummary'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+    ProjectStatus:
+      type: string
+      enum:
+        - created
+        - uploading
+        - analyzing
+        - ready
+        - failed
+        - deleting
+    Strictness:
+      type: string
+      enum:
+        - loose
+        - standard
+        - strict
+    ContentMode:
+      type: string
+      description: 图片内容处理模式。
+      enum:
+        - auto
+        - portrait
+        - landscape
+        - mixed
+    CreateProjectRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 项目名称。
+          example: 2026 Spring Trip Photos
+        settings:
+          allOf:
+            - $ref: '#/components/schemas/ProjectSettingsPatch'
+          description: 可选的初始项目设置，未填写的字段使用系统默认值。
+    ProjectSettingsPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        keepPerGroup:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 10
+          default: 2
+          example: 2
+        strictness:
+          $ref: '#/components/schemas/Strictness'
+        contentMode:
+          $ref: '#/components/schemas/ContentMode'
+        weights:
+          type: object
+          description: 权重值由服务端自动归一化。支持的字段包括 sharpness、eyesOpen、expression、exposure、composition 和 motion。
+          additionalProperties:
+            type: number
+            format: double
+            minimum: 0
+            maximum: 1
+          example:
+            sharpness: 0.3
+            eyesOpen: 0.25
+            expression: 0.15
+            exposure: 0.15
+            composition: 0.1
+            motion: 0.05
+        constraints:
+          type: object
+          description: 支持的字段包括 avoidSevereBlur、avoidSevereOverexposure、allowMildMotionBlur 和 preferFrontFacing。
+          additionalProperties:
+            type: boolean
+          example:
+            avoidSevereBlur: true
+            avoidSevereOverexposure: true
+            allowMildMotionBlur: true
+            preferFrontFacing: false
+        privacy:
+          $ref: '#/components/schemas/PrivacySettingsPatch'
+    ParseInstructionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        text:
+          type: string
+          maxLength: 2000
+          description: 用户的自然语言筛选要求。省略或传空字符串表示使用自动默认参数。
+          example: 每组保留两张最清晰、人物睁眼的照片
+        allowedFeatures:
+          type: array
+          description: 可选的允许映射字段白名单。
+          items:
+            type: string
+          example:
+            - sharpness
+            - eyesOpen
+            - keepPerGroup
+    ParseInstructionResponseEnvelope:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          $ref: '#/components/schemas/ParseInstructionResponse'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+    ParseInstructionResponse:
+      type: object
+      required:
+        - text
+        - strategy
+        - confidence
+        - unsupportedTerms
+        - explanation
+        - fallbackUsed
+        - provider
+        - model
+      properties:
+        text:
+          type: string
+        strategy:
+          $ref: '#/components/schemas/SelectionStrategy'
+        confidence:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+        unsupportedTerms:
+          type: array
+          items:
+            type: string
+        explanation:
+          type: string
+        fallbackUsed:
+          type: boolean
+        provider:
+          type: string
+        model:
+          type: string
+    SelectionStrategy:
+      type: object
+      required:
+        - keepPerGroup
+        - strictness
+        - contentMode
+        - weights
+        - constraints
+      properties:
+        keepPerGroup:
+          type: integer
+          minimum: 1
+          maximum: 10
+        strictness:
+          $ref: '#/components/schemas/Strictness'
+        contentMode:
+          $ref: '#/components/schemas/ContentMode'
+        weights:
+          type: object
+          additionalProperties:
+            type: number
+            format: double
+        constraints:
+          type: object
+          additionalProperties:
+            type: boolean
+    PrivacySettingsPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        sendThumbnailsToProvider:
+          type: boolean
+          default: false
+        stripGpsOnExport:
+          type: boolean
+          default: true
+    ProjectSettings:
+      type: object
+      required:
+        - keepPerGroup
+        - strictness
+        - contentMode
+        - weights
+        - constraints
+        - privacy
+      properties:
+        keepPerGroup:
+          type: integer
+          format: int32
+          example: 2
+        strictness:
+          $ref: '#/components/schemas/Strictness'
+        contentMode:
+          $ref: '#/components/schemas/ContentMode'
+        weights:
+          type: object
+          additionalProperties:
+            type: number
+            format: double
+        constraints:
+          type: object
+          additionalProperties:
+            type: boolean
+        privacy:
+          $ref: '#/components/schemas/PrivacySettings'
+    PrivacySettings:
+      type: object
+      required:
+        - sendThumbnailsToProvider
+        - stripGpsOnExport
+      properties:
+        sendThumbnailsToProvider:
+          type: boolean
+        stripGpsOnExport:
+          type: boolean
+    Project:
+      type: object
+      required:
+        - id
+        - name
+        - status
+        - settings
+        - assetCount
+        - groupCount
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          $ref: '#/components/schemas/ProjectStatus'
+        settings:
+          $ref: '#/components/schemas/ProjectSettings'
+        assetCount:
+          type: integer
+          format: int64
+          example: 0
+        groupCount:
+          type: integer
+          format: int64
+          example: 0
+        createdAt:
+          type: string
+          format: date-time
+          description: UTC 时间，格式为 RFC 3339。
+        updatedAt:
+          type: string
+          format: date-time
+    ProjectPage:
+      type: object
+      required:
+        - items
+        - page
+        - pageSize
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Project'
+        page:
+          type: integer
+          format: int32
+          example: 1
+        pageSize:
+          type: integer
+          format: int32
+          example: 50
+        total:
+          type: integer
+          format: int64
+          example: 1
+    CleanupJob:
+      type: object
+      required:
+        - id
+        - type
+        - status
+        - createdAt
+        - finishedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          example: projectCleanup
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - succeeded
+            - failed
+        createdAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+    DeleteProject:
+      type: object
+      required:
+        - projectId
+        - job
+      properties:
+        projectId:
+          type: string
+          format: uuid
+        job:
+          $ref: '#/components/schemas/CleanupJob'
+    ApiMeta:
+      type: object
+      required:
+        - requestId
+      properties:
+        requestId:
+          type: string
+          format: uuid
+    HealthResponse:
+      type: object
+      required:
+        - service
+        - status
+      properties:
+        service:
+          type: string
+          example: cullpilot-backend
+        status:
+          type: string
+          example: ok
+    ProjectResponseEnvelope:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          $ref: '#/components/schemas/Project'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+    ProjectPageResponseEnvelope:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          $ref: '#/components/schemas/ProjectPage'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+    DeleteProjectResponseEnvelope:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          $ref: '#/components/schemas/DeleteProject'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 72
+        displayName:
+          type: string
+          maxLength: 100
+          nullable: true
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+    User:
+      type: object
+      required:
+        - id
+        - email
+        - displayName
+        - status
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - disabled
+        createdAt:
+          type: string
+          format: date-time
+    Auth:
+      type: object
+      required:
+        - user
+        - tokenType
+        - accessToken
+        - expiresAt
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        tokenType:
+          type: string
+          example: Bearer
+        accessToken:
+          type: string
+          description: '登录凭证，后续请求放入 Authorization: Bearer <accessToken>。'
+        expiresAt:
+          type: string
+          format: date-time
+    AuthResponseEnvelope:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          $ref: '#/components/schemas/Auth'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+    UserResponseEnvelope:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          $ref: '#/components/schemas/User'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+    Logout:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+    LogoutResponseEnvelope:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          $ref: '#/components/schemas/Logout'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+    ApiError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: PROJECT_NOT_FOUND
+        message:
+          type: string
+          example: Project not found
+        details:
+          nullable: true
+          description: 错误详细信息，具体结构取决于错误编码。
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - meta
+      properties:
+        error:
+          $ref: '#/components/schemas/ApiError'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'

@@ -1,0 +1,11 @@
+fastapi==0.115.12
+httpx==0.28.1
+pydantic==2.11.4
+pydantic-settings==2.9.1
+uvicorn[standard]==0.34.2
+pytest==8.3.5
+numpy>=1.26,<2
+Pillow>=10,<12
+opencv-python==4.11.0.86
+ImageHash>=4.3,<5
+scipy>=1.11,<2
