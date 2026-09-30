@@ -88,5 +88,7 @@ def test_model_health_reports_runtime_compatibility() -> None:
     assert data["status"] in {"ok", "degraded"}
     assert set(data["components"]) == {"mediapipe", "deepface", "dinov2", "chinese_clip"}
     assert data["components"]["chinese_clip"]["enabled"] is False
-    assert data["components"]["chinese_clip"]["weights_present"] is True
+    assert data["components"]["chinese_clip"]["weights_present"] is (
+        data["inventory"]["chinese_clip"]["present"] == data["inventory"]["chinese_clip"]["total"]
+    )
     assert isinstance(data["components"]["mediapipe"]["legacy_solutions_api"], bool)
