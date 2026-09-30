@@ -1,18 +1,20 @@
 [Unit]
 Description=CullPilot Spring Boot backend
-After=network.target cullpilot-python.service
+After=network-online.target cullpilot-python.service
+Wants=network-online.target
 Wants=cullpilot-python.service
 
 [Service]
 Type=simple
-User=cullpilot
-Group=cullpilot
-WorkingDirectory=/srv/cullpilot/app/CullPilot/backend-java
+User=root
+Group=root
+WorkingDirectory=/root/workspace/aic/current/CullPilot/backend-java
 EnvironmentFile=/etc/cullpilot/cullpilot.env
-ExecStart=/usr/bin/java -jar /srv/cullpilot/app/CullPilot/backend-java/target/cullpilot-backend-0.0.1-SNAPSHOT.jar
+ExecStart=/usr/bin/java -jar /root/workspace/aic/current/CullPilot/backend-java/target/cullpilot-backend-0.0.1-SNAPSHOT.jar
 Restart=on-failure
 RestartSec=5
-NoNewPrivileges=true
-
+TimeoutStartSec=120
+TimeoutStopSec=30
+UMask=0027
 [Install]
 WantedBy=multi-user.target

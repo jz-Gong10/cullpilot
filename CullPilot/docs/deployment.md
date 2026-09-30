@@ -7,66 +7,58 @@ outside Git.
 ## Server directories
 
 ```text
-/srv/cullpilot/
-  app/              # Git checkout of this repository
-  venv/             # Python virtual environment
-  data/             # SQLite database
-  storage/          # uploaded images and exports
-/srv/cullpilot-models/  # model files, provisioned separately
+/root/workspace/aic/
+  .git .agents .codex       # server-managed; never touched by deployment
+  current -> releases/<sha> # active source release
+  releases/<sha>/           # code and tested Java JAR
+  runtime/venv/             # Python virtual environment
+  demo/models/              # existing model files; never uploaded
+  demo/data/                # existing data and semantic cache
+  CullPilot/data/           # existing SQLite database
+  CullPilot/storage/        # existing uploaded files and exports
 ```
 
-Set `ANALYSIS_MODEL_ROOT=/srv/cullpilot-models` in the server environment.
-The Java service does not load model files. It calls the Python API at
-`PYTHON_API_BASE_URL`; the Python adapter loads algorithms from `demo/agent`
-and model weights from `ANALYSIS_MODEL_ROOT`.
-
-The prepared offline model set enables DeepFace and DINOv2 in the example
-environment. The API still falls back to feature-only analysis if an optional
-package or weight is unavailable.
+Set `ANALYSIS_MODEL_ROOT=/root/workspace/aic/demo/models` in the server
+environment. GitHub Actions uploads source code only; it never replaces the
+model, data, database, or storage directories.
 
 ## First server setup
 
-1. Install Java 17, Maven 3.9+, Python 3.12, Git, and systemd.
-2. Create the `cullpilot` user and clone this repository to
-   `/srv/cullpilot/app`.
-3. Create `/srv/cullpilot-models` and place the model files there using the
-   layout documented in `demo/README.md`.
-4. Create `/etc/cullpilot/cullpilot.env` from `deploy/server.env.example`.
-5. Create the Python environment and install the requirements once:
+1. Install Java 17, Python 3.10+, curl, tar, and systemd. Maven and Node.js
+   are not needed on the server when the tested Java JAR is uploaded by CI.
+2. Keep the existing directories under `/root/workspace/aic` in place.
+3. Create `/etc/cullpilot/cullpilot.env` from `deploy/server.env.example` and
+   review every value before starting services.
+4. Configure the GitHub repository secrets listed below.
+5. Run the workflow manually once. It creates a release, a Python virtual
+   environment, installs Python dependencies, installs systemd units, and
+   starts both services.
 
-   ```bash
-   python3.12 -m venv /srv/cullpilot/venv
-   /srv/cullpilot/venv/bin/pip install -r /srv/cullpilot/app/CullPilot/python-api/requirements.txt
-   /srv/cullpilot/venv/bin/pip install -r /srv/cullpilot/app/CullPilot/python-api/requirements-ai.txt
-   ```
-
-6. Copy both files from `deploy/systemd/` to `/etc/systemd/system/`, then run:
-
-   ```bash
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now cullpilot-python.service cullpilot-java.service
-   ```
-
-The SSH deployment user must be allowed to run `systemctl daemon-reload` and
-restart these two units without an interactive sudo password. A narrow sudoers
-rule for those commands is sufficient.
+The current server uses root-owned paths and root-owned orphan processes, so
+the initial migration uses the root SSH account and root systemd services.
+Move the application to `/opt/cullpilot` and use a dedicated service account
+after the deployment is stable.
 
 ## GitHub Actions
 
-The workflow runs Java and Python tests on pushes to `main`. It then connects
-to the server and runs `deploy/update-server.sh`, which fetches the new commit,
-updates Python dependencies, packages the Java service, and restarts both
-systemd units. It never changes `/srv/cullpilot-models`.
+The workflow is manual-only for the first deployment. Once the migration has
+been verified, a `push` trigger can be added for automatic deployments. It
+uploads the tested Java JAR and runtime source to a new release directory, then
+activates it through the `current` symlink. It does not run Git on the server
+and does not modify the server `.git`, `.agents`, `.codex`, models, data,
+database, or storage.
 
 Configure these GitHub repository secrets:
 
 ```text
 DEPLOY_HOST
 DEPLOY_PORT        # optional, defaults to 22
-DEPLOY_USER
+DEPLOY_USER        # root for the initial migration
 DEPLOY_SSH_KEY
-DEPLOY_APP_DIR     # optional, defaults to /srv/cullpilot/app
+DEPLOY_KNOWN_HOSTS # required; the server's verified SSH host key line(s)
 ```
 
-For a private repository, the server checkout needs a read-only GitHub deploy
-key so `git fetch origin main` can run without an interactive login.
+The workflow uses the verified `DEPLOY_KNOWN_HOSTS` value instead of accepting
+an unverified host key. Every deployment creates a database, storage, and
+demo-data backup under `/root/workspace/aic/backups/` before restarting the
+services.

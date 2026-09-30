@@ -8,17 +8,6 @@ concurrency:
   cancel-in-progress: false
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'CullPilot/backend-java/**'
-      - 'CullPilot/python-api/**'
-      - 'CullPilot/deploy/**'
-      - 'demo/agent/**'
-      - 'demo/tests/**'
-      - 'demo/tools/**'
-      - 'CullPilot/backend-java/pom.xml'
-      - '.github/workflows/deploy-java.yml'
   workflow_dispatch:
 
 jobs:
@@ -39,10 +28,17 @@ jobs:
         working-directory: CullPilot/backend-java
         run: mvn -B test package
 
+      - name: Upload tested Java artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cullpilot-java-jar
+          path: CullPilot/backend-java/target/cullpilot-backend-0.0.1-SNAPSHOT.jar
+          if-no-files-found: error
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.10'
 
       - name: Test Python API and algorithms
         run: |
@@ -52,23 +48,61 @@ jobs:
 
   deploy:
     needs: verify
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
-      - name: Update the server over SSH
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download tested Java artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cullpilot-java-jar
+          path: ${{ runner.temp }}/cullpilot-java-artifact
+
+      - name: Prepare deployment archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar="$(find "$RUNNER_TEMP/cullpilot-java-artifact" -type f -name '*.jar' -print -quit)"
+          test -n "$jar"
+          mkdir -p CullPilot/backend-java/target
+          cp "$jar" CullPilot/backend-java/target/cullpilot-backend-0.0.1-SNAPSHOT.jar
+          archive="$RUNNER_TEMP/cullpilot-${GITHUB_SHA}.tar.gz"
+          tar -czf "$archive" \
+            CullPilot/backend-java/target/cullpilot-backend-0.0.1-SNAPSHOT.jar \
+            CullPilot/python-api/app \
+            CullPilot/python-api/requirements.txt \
+            CullPilot/python-api/requirements-ai.txt \
+            CullPilot/deploy \
+            demo/agent
+          echo "CULLPILOT_ARCHIVE=$archive" >> "$GITHUB_ENV"
+
+      - name: Upload and activate release over SSH
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DEPLOY_APP_DIR: ${{ secrets.DEPLOY_APP_DIR }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
           port="${DEPLOY_PORT:-22}"
-          app_dir="${DEPLOY_APP_DIR:-/srv/cullpilot/app}"
+          archive_name="cullpilot-${GITHUB_SHA}.tar.gz"
           install -d -m 700 "$HOME/.ssh"
           printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/deploy_key"
           chmod 600 "$HOME/.ssh/deploy_key"
-          ssh-keyscan -p "$port" -H "$DEPLOY_HOST" >> "$HOME/.ssh/known_hosts"
-          ssh -i "$HOME/.ssh/deploy_key" -p "$port" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "CULLPILOT_APP_DIR='$app_dir' bash '$app_dir/CullPilot/deploy/update-server.sh'"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 644 "$HOME/.ssh/known_hosts"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -i "$HOME/.ssh/deploy_key" -p "$port" "$DEPLOY_USER@$DEPLOY_HOST" \
+            'install -d -m 0700 /root/workspace/aic/incoming'
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -i "$HOME/.ssh/deploy_key" -P "$port" \
+            "$CULLPILOT_ARCHIVE" \
+            "$DEPLOY_USER@$DEPLOY_HOST:/root/workspace/aic/incoming/$archive_name"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -i "$HOME/.ssh/deploy_key" -p "$port" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "CULLPILOT_RELEASE_ID='$GITHUB_SHA' CULLPILOT_RELEASE_ARCHIVE='/root/workspace/aic/incoming/$archive_name' bash -s" \
+            < CullPilot/deploy/update-server.sh

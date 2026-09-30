@@ -1,17 +1,19 @@
 [Unit]
 Description=CullPilot Python analysis API
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-User=cullpilot
-Group=cullpilot
-WorkingDirectory=/srv/cullpilot/app
+User=root
+Group=root
+WorkingDirectory=/root/workspace/aic/current
 EnvironmentFile=/etc/cullpilot/cullpilot.env
-ExecStart=/srv/cullpilot/venv/bin/uvicorn app.main:app --app-dir /srv/cullpilot/app/CullPilot/python-api --host 127.0.0.1 --port 8001
+ExecStart=/root/workspace/aic/runtime/venv/bin/python -m uvicorn app.main:app --app-dir /root/workspace/aic/current/CullPilot/python-api --host 127.0.0.1 --port 8001
 Restart=on-failure
 RestartSec=5
-NoNewPrivileges=true
-
+TimeoutStartSec=120
+TimeoutStopSec=30
+UMask=0027
 [Install]
 WantedBy=multi-user.target
