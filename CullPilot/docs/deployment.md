@@ -34,6 +34,13 @@ model, data, database, or storage directories.
    environment, installs Python dependencies, installs systemd units, and
    starts both services.
 
+The workflow starts the long-running installation with `systemd-run` and
+polls its status over short SSH connections. A dropped SSH connection during
+dependency installation does not stop the server-side deployment. Progress
+logs are written under `/root/workspace/aic/runtime/deploy-logs/` and exit
+codes under `/root/workspace/aic/runtime/deploy-status/`. Do not start a new
+deployment after a polling timeout until the server-side status is checked.
+
 The current server uses root-owned paths and root-owned orphan processes, so
 the initial migration uses the root SSH account and root systemd services.
 Move the application to `/opt/cullpilot` and use a dedicated service account

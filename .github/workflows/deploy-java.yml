@@ -50,6 +50,7 @@ jobs:
     needs: verify
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
+    timeout-minutes: 180
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -68,7 +69,8 @@ jobs:
           test -n "$jar"
           mkdir -p CullPilot/backend-java/target
           cp "$jar" CullPilot/backend-java/target/cullpilot-backend-0.0.1-SNAPSHOT.jar
-          archive="$RUNNER_TEMP/cullpilot-${GITHUB_SHA}.tar.gz"
+          release_id="${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          archive="$RUNNER_TEMP/cullpilot-${release_id}.tar.gz"
           tar -czf "$archive" \
             CullPilot/backend-java/target/cullpilot-backend-0.0.1-SNAPSHOT.jar \
             CullPilot/python-api/app \
@@ -77,6 +79,7 @@ jobs:
             CullPilot/deploy \
             demo/agent
           echo "CULLPILOT_ARCHIVE=$archive" >> "$GITHUB_ENV"
+          echo "CULLPILOT_RELEASE_ID=$release_id" >> "$GITHUB_ENV"
 
       - name: Prepare SSH credentials
         env:
@@ -118,7 +121,7 @@ jobs:
         run: |
           set -euo pipefail
           port="${DEPLOY_PORT:-22}"
-          archive_name="cullpilot-${GITHUB_SHA}.tar.gz"
+          archive_name="cullpilot-${CULLPILOT_RELEASE_ID}.tar.gz"
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
             -o IdentityAgent=none -o IdentitiesOnly=yes -o PasswordAuthentication=no \
             -i "$HOME/.ssh/deploy_key" -p "$port" "$DEPLOY_USER@$DEPLOY_HOST" \
@@ -128,8 +131,18 @@ jobs:
             -i "$HOME/.ssh/deploy_key" -P "$port" \
             "$CULLPILOT_ARCHIVE" \
             "$DEPLOY_USER@$DEPLOY_HOST:/root/workspace/aic/incoming/$archive_name"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o IdentityAgent=none -o IdentitiesOnly=yes -o PasswordAuthentication=no \
+            -i "$HOME/.ssh/deploy_key" -P "$port" \
+            CullPilot/deploy/update-server.sh \
+            "$DEPLOY_USER@$DEPLOY_HOST:/root/workspace/aic/incoming/update-server-${CULLPILOT_RELEASE_ID}.sh"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o IdentityAgent=none -o IdentitiesOnly=yes -o PasswordAuthentication=no \
+            -i "$HOME/.ssh/deploy_key" -P "$port" \
+            CullPilot/deploy/run-server.sh \
+            "$DEPLOY_USER@$DEPLOY_HOST:/root/workspace/aic/incoming/run-server-${CULLPILOT_RELEASE_ID}.sh"
 
-      - name: Activate release
+      - name: Start server deployment
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
@@ -137,9 +150,46 @@ jobs:
         run: |
           set -euo pipefail
           port="${DEPLOY_PORT:-22}"
-          archive_name="cullpilot-${GITHUB_SHA}.tar.gz"
+          archive_name="cullpilot-${CULLPILOT_RELEASE_ID}.tar.gz"
+          unit="cullpilot-deploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
             -o IdentityAgent=none -o IdentitiesOnly=yes -o PasswordAuthentication=no \
             -i "$HOME/.ssh/deploy_key" -p "$port" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "CULLPILOT_RELEASE_ID='$GITHUB_SHA' CULLPILOT_RELEASE_ARCHIVE='/root/workspace/aic/incoming/$archive_name' bash -s" \
-            < CullPilot/deploy/update-server.sh
+            "systemd-run --unit='$unit' --service-type=exec --setenv='CULLPILOT_RELEASE_ID=$CULLPILOT_RELEASE_ID' --setenv='CULLPILOT_RELEASE_ARCHIVE=/root/workspace/aic/incoming/$archive_name' /bin/bash '/root/workspace/aic/incoming/run-server-$CULLPILOT_RELEASE_ID.sh'"
+
+      - name: Watch server deployment
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          port="${DEPLOY_PORT:-22}"
+          status_file="/root/workspace/aic/runtime/deploy-status/${CULLPILOT_RELEASE_ID}.status"
+          log_file="/root/workspace/aic/runtime/deploy-logs/${CULLPILOT_RELEASE_ID}.log"
+          unit="cullpilot-deploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.service"
+          ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentityAgent=none -o IdentitiesOnly=yes -o PasswordAuthentication=no)
+          for attempt in {1..360}; do
+            if ! status="$(ssh "${ssh_opts[@]}" -i "$HOME/.ssh/deploy_key" -p "$port" \
+                "$DEPLOY_USER@$DEPLOY_HOST" \
+                "if test -f '$status_file'; then cat '$status_file'; elif systemctl is-failed --quiet '$unit'; then printf failed-unit; else printf pending; fi")"; then
+              echo "Status connection failed; retrying in 20 seconds. Server deployment continues independently."
+            elif [[ "$status" == "0" ]]; then
+              ssh "${ssh_opts[@]}" -i "$HOME/.ssh/deploy_key" -p "$port" \
+                "$DEPLOY_USER@$DEPLOY_HOST" "tail -n 80 '$log_file'" || true
+              echo "Server deployment completed successfully."
+              exit 0
+            elif [[ "$status" != "pending" ]]; then
+              ssh "${ssh_opts[@]}" -i "$HOME/.ssh/deploy_key" -p "$port" \
+                "$DEPLOY_USER@$DEPLOY_HOST" "tail -n 100 '$log_file'; journalctl -u '$unit' -n 30 --no-pager" || true
+              echo "Server deployment failed with exit code: $status" >&2
+              exit 1
+            elif (( attempt % 3 == 0 )); then
+              echo "Server deployment still running (check $attempt of 360)."
+              ssh "${ssh_opts[@]}" -i "$HOME/.ssh/deploy_key" -p "$port" \
+                "$DEPLOY_USER@$DEPLOY_HOST" "tail -n 3 '$log_file'" || true
+            fi
+            sleep 20
+          done
+          echo "Timed out waiting for server deployment; check $status_file and $log_file before retrying." >&2
+          exit 1
