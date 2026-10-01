@@ -119,7 +119,7 @@ def _duplicate_similarity(a: ImageFeatures, b: ImageFeatures) -> float:
 
 def recommend_group(group: PhotoGroup, features: dict[str, ImageFeatures], qualities: dict[str, QualityScore], faces: dict[str, FaceAnalysis], weights: UserWeights | None = None, keep_count: int = DEFAULT_KEEP_COUNT, strictness: str = DEFAULT_STRICTNESS, filters: dict | None = None, poses: dict[str, PoseInfo] | None = None) -> GroupRecommendation:
     weights = weights or UserWeights()
-    _, discard_threshold = STRICTNESS_THRESHOLDS.get(strictness, STRICTNESS_THRESHOLDS[DEFAULT_STRICTNESS])
+    keep_threshold, discard_threshold = STRICTNESS_THRESHOLDS.get(strictness, STRICTNESS_THRESHOLDS[DEFAULT_STRICTNESS])
     candidates, filtered = [], []
     for asset_id in group.asset_ids:
         feature, quality = features.get(asset_id), qualities.get(asset_id)
@@ -147,23 +147,19 @@ def recommend_group(group: PhotoGroup, features: dict[str, ImageFeatures], quali
                 best_value, best_index = value, index
         selected.append(remaining.pop(best_index))
 
-    selected_ids = {item[0] for item in selected}
     ordered = selected + remaining + filtered
     ranks = []
     for index, (asset_id, score, reasons, filter_reasons) in enumerate(ordered, start=1):
         filtered_out = bool(filter_reasons)
         if filtered_out:
             state = "filtered_out"
-        elif asset_id in selected_ids:
-            # keep_count is an explicit per-group selection count. Quality
-            # thresholds still classify lower-ranked photos, but must not
-            # reduce the requested number of top-ranked picks in a group.
+        elif index <= target and score >= keep_threshold:
             state = "keep"
         elif score < discard_threshold:
             state = "discard_suggested"
         else:
             state = "undecided"
-        if index > 1 and asset_id in selected_ids:
+        if index > 1 and not filtered_out and index <= target:
             reasons = list(reasons) + ["与已选照片重复度较低"]
         ranks.append(PhotoRank(asset_id, index, round(score, 3), state, reasons[:6], filtered_out, filter_reasons))
     return GroupRecommendation(group.group_id, keep_count, strictness, ranks)
