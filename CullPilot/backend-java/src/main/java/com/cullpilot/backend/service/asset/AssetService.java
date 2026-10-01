@@ -18,7 +18,17 @@ import com.cullpilot.backend.repository.asset.AssetRepository;
 import com.cullpilot.backend.repository.project.ProjectRepository;
 import com.cullpilot.backend.domain.project.Project;
 import com.cullpilot.backend.domain.project.ProjectStatus;
+import com.cullpilot.backend.domain.aigc.AigcEdit;
+import com.cullpilot.backend.domain.aigc.AigcEditStatus;
+import com.cullpilot.backend.domain.export.ExportTask;
+import com.cullpilot.backend.domain.job.JobStatus;
+import com.cullpilot.backend.domain.job.JobType;
 import com.cullpilot.backend.security.CurrentUser;
+import com.cullpilot.backend.repository.aigc.AigcEditRepository;
+import com.cullpilot.backend.repository.export.ExportTaskRepository;
+import com.cullpilot.backend.repository.group.AssetGroupRepository;
+import com.cullpilot.backend.repository.job.JobRepository;
+import com.cullpilot.backend.service.aigc.AigcStorageService;
 import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -27,6 +37,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -41,6 +53,7 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -54,18 +67,33 @@ public class AssetService {
     private final AssetStorageService storageService;
     private final CurrentUser currentUser;
     private final DecisionHistoryRepository decisionHistoryRepository;
+    private final JobRepository jobRepository;
+    private final ExportTaskRepository exportTaskRepository;
+    private final AssetGroupRepository groupRepository;
+    private final AigcEditRepository aigcEditRepository;
+    private final AigcStorageService aigcStorageService;
 
     public AssetService(
             AssetRepository assetRepository,
             ProjectRepository projectRepository,
             AssetStorageService storageService,
             CurrentUser currentUser,
-            DecisionHistoryRepository decisionHistoryRepository) {
+            DecisionHistoryRepository decisionHistoryRepository,
+            JobRepository jobRepository,
+            ExportTaskRepository exportTaskRepository,
+            AssetGroupRepository groupRepository,
+            AigcEditRepository aigcEditRepository,
+            AigcStorageService aigcStorageService) {
         this.assetRepository = assetRepository;
         this.projectRepository = projectRepository;
         this.storageService = storageService;
         this.currentUser = currentUser;
         this.decisionHistoryRepository = decisionHistoryRepository;
+        this.jobRepository = jobRepository;
+        this.exportTaskRepository = exportTaskRepository;
+        this.groupRepository = groupRepository;
+        this.aigcEditRepository = aigcEditRepository;
+        this.aigcStorageService = aigcStorageService;
     }
 
     @Transactional
@@ -176,6 +204,71 @@ public class AssetService {
         Asset asset = findAsset(assetId);
         requireProject(asset.getProjectId());
         return AssetResponse.from(asset);
+    }
+
+    @Transactional
+    public void delete(String assetId) {
+        Asset asset = findAsset(assetId);
+        Project project = requireProject(asset.getProjectId());
+        if (project.getStatus() == ProjectStatus.DELETING) {
+            throw new ApiException(HttpStatus.CONFLICT, "PROJECT_OPERATION_NOT_ALLOWED",
+                    "Project is being deleted");
+        }
+        if (project.getStatus() == ProjectStatus.ANALYZING
+                || jobRepository.findFirstByProjectIdAndTypeAndStatusInOrderByCreatedAtDesc(
+                project.getId(), JobType.ANALYSIS, Set.of(JobStatus.QUEUED, JobStatus.RUNNING)).isPresent()) {
+            throw new ApiException(HttpStatus.CONFLICT, "ANALYSIS_IN_PROGRESS",
+                    "Images cannot be deleted during analysis");
+        }
+        if (exportTaskRepository.existsByProjectIdAndStatusIn(project.getId(),
+                Set.of(ExportTask.Status.QUEUED, ExportTask.Status.RUNNING))) {
+            throw new ApiException(HttpStatus.CONFLICT, "EXPORT_IN_PROGRESS",
+                    "Images cannot be deleted during export");
+        }
+        if (aigcEditRepository.existsByAssetIdAndStatusIn(asset.getId(),
+                Set.of(AigcEditStatus.QUEUED, AigcEditStatus.RUNNING))) {
+            throw new ApiException(HttpStatus.CONFLICT, "AIGC_IN_PROGRESS",
+                    "Image editing is still in progress");
+        }
+
+        String groupId = asset.getGroupId();
+        List<AigcEdit> edits = aigcEditRepository.findAllByAssetId(asset.getId());
+        List<String> generatedPaths = edits.stream()
+                .map(AigcEdit::getGeneratedPath).filter(path -> path != null).toList();
+        aigcEditRepository.deleteAllByAssetId(asset.getId());
+        decisionHistoryRepository.deleteAllByAssetIdIn(Set.of(asset.getId()));
+        assetRepository.delete(asset);
+        assetRepository.flush();
+
+        if (groupId != null) {
+            int remaining = Math.toIntExact(assetRepository.countByProjectIdAndGroupId(project.getId(), groupId));
+            groupRepository.findById(groupId).filter(group -> group.getProjectId().equals(project.getId()))
+                    .ifPresent(group -> {
+                        if (remaining == 0) {
+                            groupRepository.delete(group);
+                        } else {
+                            group.removeAsset(asset.getId(), remaining);
+                        }
+                    });
+        }
+        if (assetRepository.countByProjectId(project.getId()) == 0) {
+            project.setStatus(ProjectStatus.CREATED);
+        }
+
+        Runnable cleanup = () -> {
+            storageService.delete(asset.getOriginalPath(), asset.getThumbnailPath());
+            generatedPaths.forEach(aigcStorageService::delete);
+        };
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            cleanup.run();
+        } else {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    cleanup.run();
+                }
+            });
+        }
     }
 
     @Transactional

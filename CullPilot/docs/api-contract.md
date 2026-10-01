@@ -191,6 +191,7 @@ keepPerGroup 范围为 1 到 10，表示每个相似图片组按排名保留的�
 | POST | /api/v1/projects/{projectId}/assets | 批量上传图片 |
 | GET | /api/v1/projects/{projectId}/assets | 分页查询图片 |
 | GET | /api/v1/assets/{assetId} | 查询图片详情 |
+| DELETE | /api/v1/assets/{assetId} | 删除项目中的单张图片 |
 | GET | /api/v1/assets/{assetId}/thumbnail | 读取缩略图 |
 | GET | /api/v1/assets/{assetId}/original | 读取原图 |
 
@@ -405,6 +406,15 @@ name 长度为 1 到 100。settings 可以省略，省略字段采用服务端�
     GET /api/v1/assets/{assetId}/original
 
 响应为图片二进制流。Spring Boot 必须先校验资源归属，再读取文件；storage 目录不直接作为公共静态目录暴露。
+
+### 5.4 删除单张图片
+
+    DELETE /api/v1/assets/{assetId}
+
+删除成功返回 `204 No Content`。服务端会同时删除图片数据库记录、原图、缩略图、决策历史、对应的 AIGC 任务及已生成的 AIGC 图片；如果图片属于分组，也会从分组统计和推荐列表中移除。图片所属项目正在分析、导出，或该图片的 AIGC 任务正在排队/运行时，返回 `409`，避免后台任务继续读取已删除图片。
+
+删除图片不会自动重新计算同组剩余图片的 AI 排名；如需得到新的排序和推荐结果，删除后重新启动分析任务。
+已生成的旧导出 ZIP 不会被修改；重新发起导出时，已删除的图片不会进入新 ZIP。删除项目中最后一张图片后，项目状态恢复为 `created`。
 
 ## 6. 分析任务接口
 
@@ -703,7 +713,49 @@ selection 取 keep 或 keepAndReview。响应 202，返回 exportId 和任务信
 
 当前实现生成 ZIP；解压后所有内容位于 `cullpilot-export/` 文件夹中，图片按分组放入 `group-001/`、`group-002/` 等子文件夹，未分组图片放入 `ungrouped/`。`copyImages=true` 时包含选中原图，`includeManifest=true` 时在 `cullpilot-export/manifest.csv` 生成清单。`stripGps=true` 时通过重新编码图片移除元数据，除了 GPS 之外的 EXIF 信息也会被移除。`stripGps` 省略时使用项目隐私设置。
 
-## 11. 错误码
+## 11. AIGC 图片编辑
+
+### 11.1 创建图片编辑任务
+
+    POST /api/v1/projects/{projectId}/aigc-edits
+    Content-Type: application/json
+
+请求示例：
+
+    {
+      "items": [
+        {"assetId": "asset-uuid-1", "prompt": "改善逆光，肤色自然一些"},
+        {"assetId": "asset-uuid-2", "prompt": ""}
+      ],
+      "model": "qwen-image-3.0",
+      "size": "1024*1024",
+      "promptExtend": true,
+      "watermark": false
+    }
+
+一次最多提交 50 张图片，每张图片对应一个独立异步任务和可选指令。仅允许处理已经有 AI 推荐结果，或用户已经明确操作过，并且最终有效决定为 `keep` 或 `review` 的图片。空白或省略 `prompt` 时，Python 会传入默认自然美化提示词，由图像模型结合原图执行美化。
+
+接口返回 202 和任务列表。Java 调用 Python 内部接口，校验生成结果并保存至 `storage/{projectId}/aigc/{editId}/`。原始图片只读传给模型，不会被覆盖。
+
+### 11.2 查询 AIGC 独立分组和任务
+
+    GET /api/v1/projects/{projectId}/aigc-edits
+    GET /api/v1/aigc-edits/{editId}
+    GET /api/v1/aigc-edits/{editId}/image
+
+项目的 AIGC 结果是一个独立虚拟分组，分组标识为 `aigc-{projectId}`，不混入原始相似度分组。分组列表返回所有编辑任务；`imageCount` 只统计成功生成的图片。成功任务可通过 `imageUrl` 或图片读取接口获取生成图。
+
+### 11.3 导出规则
+
+- ZIP 中原图仍放在 `cullpilot-export/group-001/`、`group-002/` 等分组目录；未分组原图放在 `cullpilot-export/ungrouped/`。
+- 成功的生成图单独放在 `cullpilot-export/aigc/`，不删除、替换或覆盖原图。
+- 对应原图最终有效决定为 `keep` 时，在 `keep` 和 `keepAndReview` 两类导出中都包含生成图；为 `review` 时，只在 `keepAndReview` 中包含；为 `reject` 时不包含生成图。
+- `manifest.csv` 记录原图与生成图的对应关系、AIGC 任务 ID 和实际使用的指令。
+- 如果用户在任务排队期间将图片改为 `reject`，任务启动时会再次检查并停止编辑；如果导出前改为 `reject`，对应生成图不会进入该次导出。
+
+Python 配置 `AIGC_API_KEY`、`AIGC_ENDPOINT`、`AIGC_MODEL` 和 `AIGC_TIMEOUT_SECONDS`。API Key 只配置在 Python 服务端，不发送给浏览器。
+
+## 12. 错误码
 
 | HTTP | code | 含义 |
 |---|---|---|
@@ -720,7 +772,7 @@ selection 取 keep 或 keepAndReview。响应 202，返回 exportId 和任务信
 | 503 | LLM_UNAVAILABLE | Python 或外部模型暂时不可用 |
 | 507 | STORAGE_INSUFFICIENT | 存储空间不足 |
 
-## 12. 必须保持的不变量
+## 13. 必须保持的不变量
 
 1. 浏览器只调用 Spring Boot，API Key 不返回前端。
 2. 每个资源操作都校验资源归属，不能只凭 assetId 访问其他项目的数据。
@@ -732,8 +784,9 @@ selection 取 keep 或 keepAndReview。响应 202，返回 exportId 和任务信
 8. 分页、状态枚举、分数单位、时间格式和字段含义不能由单个模块自行改变。
 9. 手动合并、拆分和移出只改变分组关系，不删除图片；受影响分组要重新计算排序。
 10. 自然语言解析是策略预览；应用策略必须由后续明确请求完成。
+11. AIGC 图片作为独立结果保存和导出；原始 Asset 永不被生成结果覆盖。
 
-## 13. 推荐实现顺序
+## 14. 推荐实现顺序
 
 1. 创建项目、上传图片、生成并读取缩略图。
 2. 启动分析、查询任务、查询项目汇总。

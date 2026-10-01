@@ -55,6 +55,32 @@ public class DatabaseSchemaMigration {
                 )
                 """);
         jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_exports_project_id ON exports(project_id)");
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS aigc_edits (
+                    id VARCHAR(36) NOT NULL PRIMARY KEY,
+                    project_id VARCHAR(36) NOT NULL,
+                    asset_id VARCHAR(36) NOT NULL,
+                    prompt_text TEXT NOT NULL,
+                    prompt_used TEXT,
+                    model VARCHAR(100) NOT NULL,
+                    image_size VARCHAR(20) NOT NULL,
+                    prompt_extend BOOLEAN NOT NULL,
+                    watermark BOOLEAN NOT NULL,
+                    status VARCHAR(20) NOT NULL,
+                    provider VARCHAR(50),
+                    generated_path VARCHAR(500),
+                    mime_type VARCHAR(100),
+                    size_bytes INTEGER,
+                    error_message VARCHAR(500),
+                    created_at TIMESTAMP NOT NULL,
+                    started_at TIMESTAMP,
+                    finished_at TIMESTAMP,
+                    entity_version INTEGER NOT NULL DEFAULT 0
+                )
+                """);
+        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_aigc_edits_project_id ON aigc_edits(project_id)");
+        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_aigc_edits_asset_id ON aigc_edits(asset_id)");
+        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_aigc_edits_status ON aigc_edits(status)");
         String[][] columns = {
                 {"group_rank", "INTEGER"},
                 {"recommend_score", "REAL"},

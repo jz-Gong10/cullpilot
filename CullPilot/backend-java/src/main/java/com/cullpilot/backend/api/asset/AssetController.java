@@ -86,6 +86,12 @@ public class AssetController {
         return ResponseEntity.ok(ApiResponse.success(assetService.get(assetId)));
     }
 
+    @DeleteMapping("/api/v1/assets/{assetId}")
+    public ResponseEntity<Void> delete(@PathVariable String assetId) {
+        assetService.delete(assetId);
+        return ResponseEntity.noContent().build();
+    }
+
     @PatchMapping(value = "/api/v1/assets/{assetId}/decision", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ApiResponse<AssetResponse>> updateDecision(
             @PathVariable String assetId,

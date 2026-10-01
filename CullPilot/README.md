@@ -1,19 +1,19 @@
 # CullPilot
 
-当前已实现项目管理、图片上传、分析与相似分组、用户复核和导出。AI 分析的运行要求、接口和各文件职责见 [AI 图片筛选适配说明](docs/ai-analysis.md)。
+当前已实现项目管理、图片上传、分析与相似分组、用户复核、AIGC 图片美化和导出。AI 分析的运行要求、接口和各文件职责见 [AI 图片筛选适配说明](docs/ai-analysis.md)。
 
-图片筛选项目的基础工程骨架。
+图片筛选项目的后端工程。
 
 当前架构：
 
-- `backend-java`：Spring Boot 主后端，负责未来的项目、图片、分析任务、分组、决策和导出等业务。
-- `python-api`：Python API 适配服务，负责分析请求适配以及未来的大模型或其他外部视觉 API 调用。
+- `backend-java`：Spring Boot 主后端，负责项目、图片、分析、分组、决策、AIGC 编辑任务和导出等业务。
+- `python-api`：Python API 适配服务，负责分析和调用外部图像编辑模型。
 - `../demo/agent`：CullPilot 当前使用的核心图片分析算法模块。
 - `docs`：架构说明、接口边界和目录说明。
 - `storage`：原图、缩略图和导出文件的本地存储根目录。
 - `data`：本地 SQLite 数据库文件目录。
 
-本版本只搭建工程边界和启动骨架，不实现图片上传、分析、分组、导出等业务功能。
+AIGC 编辑只对最终判断为 keep/review 的已分析或已人工决策图片开放。生成图独立保存，不替换原图；导出 ZIP 保留原有 `cullpilot-export/group-*` 和 `ungrouped` 目录，并增加 `cullpilot-export/aigc/`。接口与请求示例见 [API 合约](docs/api-contract.md) 和 [Apifox OpenAPI](docs/apifox-openapi.yaml)。
 
 ## 启动方式
 

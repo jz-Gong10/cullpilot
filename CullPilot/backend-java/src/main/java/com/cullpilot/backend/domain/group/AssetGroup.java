@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 @Entity
@@ -72,4 +73,11 @@ public class AssetGroup {
     public List<String> getRecommendedAssetIds() { return JsonColumns.strings(recommendedAssetIdsJson); }
     public Instant getTimeFrom() { return timeFrom; }
     public Instant getTimeTo() { return timeTo; }
+
+    public void removeAsset(String assetId, int remainingCount) {
+        assetCount = remainingCount;
+        List<String> recommended = new ArrayList<>(getRecommendedAssetIds());
+        recommended.removeIf(assetId::equals);
+        recommendedAssetIdsJson = JsonColumns.write(recommended);
+    }
 }

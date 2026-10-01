@@ -25,6 +25,8 @@ import com.cullpilot.backend.domain.job.JobStatus;
 import com.cullpilot.backend.domain.job.JobType;
 import com.cullpilot.backend.repository.asset.DecisionHistoryRepository;
 import com.cullpilot.backend.domain.export.ExportTask;
+import com.cullpilot.backend.domain.aigc.AigcEditStatus;
+import com.cullpilot.backend.repository.aigc.AigcEditRepository;
 import com.cullpilot.backend.security.CurrentUser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -61,6 +63,7 @@ public class ProjectService {
     private final ExportTaskRepository exportTaskRepository;
     private final DecisionHistoryRepository decisionHistoryRepository;
     private final AssetGroupRepository groupRepository;
+    private final AigcEditRepository aigcEditRepository;
 
     public ProjectService(
             ProjectRepository projectRepository,
@@ -72,7 +75,8 @@ public class ProjectService {
             CurrentUser currentUser,
             ExportTaskRepository exportTaskRepository,
             DecisionHistoryRepository decisionHistoryRepository,
-            AssetGroupRepository groupRepository) {
+            AssetGroupRepository groupRepository,
+            AigcEditRepository aigcEditRepository) {
         this.projectRepository = projectRepository;
         this.assetRepository = assetRepository;
         this.storageService = storageService;
@@ -83,6 +87,7 @@ public class ProjectService {
         this.exportTaskRepository = exportTaskRepository;
         this.decisionHistoryRepository = decisionHistoryRepository;
         this.groupRepository = groupRepository;
+        this.aigcEditRepository = aigcEditRepository;
     }
 
     @Transactional
@@ -146,6 +151,11 @@ public class ProjectService {
             throw new ApiException(HttpStatus.CONFLICT, "EXPORT_IN_PROGRESS", "项目正在导出，暂时不能删除");
         }
 
+        if (aigcEditRepository.existsByProjectIdAndStatusIn(projectId,
+                Set.of(AigcEditStatus.QUEUED, AigcEditStatus.RUNNING))) {
+            throw new ApiException(HttpStatus.CONFLICT, "AIGC_IN_PROGRESS", "Project has image-edit tasks in progress");
+        }
+
         if (jobRepository.findFirstByProjectIdAndTypeAndStatusInOrderByCreatedAtDesc(
                 projectId, JobType.ANALYSIS,
                 Set.of(JobStatus.QUEUED, JobStatus.RUNNING)).isPresent()) {
@@ -163,6 +173,7 @@ public class ProjectService {
                 .forEach(job -> jobErrorRepository.deleteAllByJobId(job.getId()));
         jobRepository.deleteAllByProjectId(project.getId());
         exportTaskRepository.deleteAllByProjectId(project.getId());
+        aigcEditRepository.deleteAllByProjectId(project.getId());
         var assetIds = assetRepository
                 .findAllByProjectIdOrderByCreatedAtAsc(project.getId()).stream()
                 .map(com.cullpilot.backend.domain.asset.Asset::getId).toList();

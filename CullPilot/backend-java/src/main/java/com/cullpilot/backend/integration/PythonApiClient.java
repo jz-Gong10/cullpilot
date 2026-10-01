@@ -44,4 +44,17 @@ public class PythonApiClient {
         }
         return result;
     }
+
+    public AigcContract.Result editImage(AigcContract.Request request) {
+        AigcContract.Result result = restClient.post()
+                .uri("/api/v1/internal/aigc/image-edit")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .retrieve()
+                .body(AigcContract.Result.class);
+        if (result == null) {
+            throw new IllegalStateException("Python image editor returned an empty response");
+        }
+        return result;
+    }
 }

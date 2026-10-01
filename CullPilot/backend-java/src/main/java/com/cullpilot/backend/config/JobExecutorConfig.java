@@ -34,4 +34,17 @@ public class JobExecutorConfig {
         executor.initialize();
         return executor;
     }
+
+    @Bean(name = "aigcTaskExecutor")
+    public Executor aigcTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(100);
+        executor.setThreadNamePrefix("cullpilot-aigc-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(10);
+        executor.initialize();
+        return executor;
+    }
 }

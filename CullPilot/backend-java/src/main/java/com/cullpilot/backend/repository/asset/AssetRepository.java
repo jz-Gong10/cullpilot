@@ -52,5 +52,7 @@ public interface AssetRepository extends JpaRepository<Asset, String> {
 
     Page<Asset> findAllByProjectIdAndGroupId(String projectId, String groupId, Pageable pageable);
 
+    long countByProjectIdAndGroupId(String projectId, String groupId);
+
     void deleteAllByProjectId(String projectId);
 }

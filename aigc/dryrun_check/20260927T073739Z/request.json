@@ -1,0 +1,24 @@
+{
+  "model": "qwen-image-3.0-pro",
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "image": "<base64 image omitted; 364676 bytes>"
+          },
+          {
+            "text": "将输入图片中的蛋挞摆放在白色陶瓷盘上，放在浅色木桌上，旁边有咖啡和少量薄荷叶。保持蛋挞外观和数量，明亮自然窗光，真实美食摄影，浅景深，构图整洁。"
+          }
+        ]
+      }
+    ]
+  },
+  "parameters": {
+    "prompt_extend": true,
+    "size": "1024*1024",
+    "n": 1,
+    "watermark": false
+  }
+}

@@ -19,8 +19,16 @@ class Settings(BaseSettings):
     llm_model: str = ""
     llm_timeout_seconds: int = 20
 
+    aigc_api_key: str = ""
+    aigc_endpoint: str = (
+        "https://dashscope.aliyuncs.com/api/v1/services/aigc/"
+        "multimodal-generation/generation"
+    )
+    aigc_model: str = "qwen-image-3.0"
+    aigc_timeout_seconds: int = 600
+
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", "../.env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )

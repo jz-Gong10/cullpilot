@@ -5,19 +5,22 @@ import com.cullpilot.backend.api.export.ExportRequests.CreateExportRequest;
 import com.cullpilot.backend.api.export.ExportResponses.ExportResponse;
 import com.cullpilot.backend.domain.asset.Asset;
 import com.cullpilot.backend.domain.asset.AssetDecision;
-import com.cullpilot.backend.domain.asset.AssetRecommendation;
 import com.cullpilot.backend.domain.asset.DecisionHistory;
+import com.cullpilot.backend.domain.aigc.AigcEdit;
+import com.cullpilot.backend.domain.aigc.AigcEditStatus;
 import com.cullpilot.backend.domain.export.ExportTask;
 import com.cullpilot.backend.domain.group.AssetGroup;
 import com.cullpilot.backend.domain.project.Project;
 import com.cullpilot.backend.domain.project.ProjectSettings;
 import com.cullpilot.backend.repository.asset.AssetRepository;
 import com.cullpilot.backend.repository.asset.DecisionHistoryRepository;
+import com.cullpilot.backend.repository.aigc.AigcEditRepository;
 import com.cullpilot.backend.repository.export.ExportTaskRepository;
 import com.cullpilot.backend.repository.group.AssetGroupRepository;
 import com.cullpilot.backend.repository.project.ProjectRepository;
 import com.cullpilot.backend.security.CurrentUser;
 import com.cullpilot.backend.service.asset.AssetStorageService;
+import com.cullpilot.backend.service.asset.EffectiveDecision;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.io.Resource;
@@ -53,6 +56,7 @@ public class ExportService {
     private final AssetGroupRepository groupRepository;
     private final ProjectRepository projectRepository;
     private final AssetRepository assetRepository;
+    private final AigcEditRepository aigcEditRepository;
     private final DecisionHistoryRepository historyRepository;
     private final AssetStorageService storageService;
     private final ObjectMapper objectMapper;
@@ -61,13 +65,15 @@ public class ExportService {
 
     public ExportService(ExportTaskRepository exportRepository, AssetGroupRepository groupRepository,
                          ProjectRepository projectRepository,
-                         AssetRepository assetRepository, DecisionHistoryRepository historyRepository,
+                         AssetRepository assetRepository, AigcEditRepository aigcEditRepository,
+                         DecisionHistoryRepository historyRepository,
                          AssetStorageService storageService, ObjectMapper objectMapper,
                          CurrentUser currentUser, @Qualifier("exportTaskExecutor") Executor exportTaskExecutor) {
         this.exportRepository = exportRepository;
         this.groupRepository = groupRepository;
         this.projectRepository = projectRepository;
         this.assetRepository = assetRepository;
+        this.aigcEditRepository = aigcEditRepository;
         this.historyRepository = historyRepository;
         this.storageService = storageService;
         this.objectMapper = objectMapper;
@@ -123,17 +129,18 @@ public class ExportService {
             Project project = projectRepository.findById(task.getProjectId()).orElseThrow();
             SelectionResult selection = selectAssets(task, project.getId());
             Map<String, String> groupDirectories = groupDirectories(project.getId());
-            task.setTotalCount(selection.assets().size());
+            task.setTotalCount(selection.assets().size() + selection.edits().size());
             task = exportRepository.saveAndFlush(task);
 
             Path exportRoot = storageService.exportPath(project.getId(), task.getId());
             Path zipPath = exportRoot.resolve("export.zip");
-            writeZip(zipPath, task, selection.assets(), selection.userOperatedAssetIds(), groupDirectories);
+            writeZip(zipPath, task, selection.assets(), selection.userOperatedAssetIds(),
+                    groupDirectories, selection.edits());
             task = exportRepository.findById(exportId).orElseThrow();
             task.setFilePath(relativePath(project.getId(), task.getId()));
             task.setStatus(ExportTask.Status.SUCCEEDED);
             task.setFinishedAt(Instant.now());
-            task.setProcessedCount(selection.assets().size());
+            task.setProcessedCount(selection.assets().size() + selection.edits().size());
             exportRepository.saveAndFlush(task);
         } catch (Exception exception) {
             task = exportRepository.findById(exportId).orElse(task);
@@ -151,26 +158,27 @@ public class ExportService {
                 .map(DecisionHistory::getAssetId).toList());
         List<Asset> selected = new ArrayList<>();
         for (Asset asset : assets) {
-            AssetDecision effective = userOperated.contains(asset.getId())
-                    ? asset.getDecision()
-                    : asset.getRecommendation() == null
-                    ? AssetDecision.REVIEW
-                    : toDecision(asset.getRecommendation());
+            AssetDecision effective = EffectiveDecision.of(asset, userOperated);
             boolean include = effective == AssetDecision.KEEP
                     || (task.getSelection() == ExportTask.Selection.KEEP_AND_REVIEW
                     && effective == AssetDecision.REVIEW);
             if (include) selected.add(asset);
         }
-        return new SelectionResult(selected, userOperated);
+        Set<String> selectedIds = selected.stream().map(Asset::getId)
+                .collect(java.util.stream.Collectors.toSet());
+        List<AigcEdit> generated = aigcEditRepository
+                .findAllByProjectIdAndStatusInOrderByCreatedAtAsc(projectId, List.of(AigcEditStatus.SUCCEEDED))
+                .stream().filter(edit -> selectedIds.contains(edit.getAssetId())).toList();
+        return new SelectionResult(selected, userOperated, generated);
     }
 
     private void writeZip(Path zipPath, ExportTask task, List<Asset> assets,
                           Set<String> userOperatedAssetIds,
-                          Map<String, String> groupDirectories) throws IOException {
+                          Map<String, String> groupDirectories, List<AigcEdit> edits) throws IOException {
         try (OutputStream output = Files.newOutputStream(zipPath);
              ZipOutputStream zip = new ZipOutputStream(output, StandardCharsets.UTF_8)) {
             List<String> manifest = new ArrayList<>();
-            manifest.add("assetId,originalName,effectiveDecision,decisionSource,userDecision,recommendation,path");
+            manifest.add("assetId,originalName,effectiveDecision,decisionSource,userDecision,recommendation,path,itemType,aigcEditId,prompt");
             zip.putNextEntry(new ZipEntry(EXPORT_DIRECTORY + "/"));
             zip.closeEntry();
             Set<String> createdDirectories = new HashSet<>();
@@ -198,7 +206,38 @@ public class ExportService {
                                 : asset.getRecommendation() == null ? "default" : "ai") + ","
                         + csv(userOperatedAssetIds.contains(asset.getId()) ? asset.getDecision().value() : "") + ","
                         + csv(asset.getRecommendation() == null ? "" : asset.getRecommendation().value()) + ","
-                        + csv(task.isCopyImages() ? filename : ""));
+                        + csv(task.isCopyImages() ? filename : "") + ",original,,");
+                index++;
+                updateProgress(task.getId(), index);
+            }
+            if (task.isCopyImages() && !edits.isEmpty()) {
+                zip.putNextEntry(new ZipEntry(EXPORT_DIRECTORY + "/aigc/"));
+                zip.closeEntry();
+            }
+            Map<String, Asset> assetsById = new HashMap<>();
+            assets.forEach(asset -> assetsById.put(asset.getId(), asset));
+            for (AigcEdit edit : edits) {
+                Asset source = assetsById.get(edit.getAssetId());
+                if (source == null) continue;
+                String filename = aigcFilename(edit, source);
+                if (task.isCopyImages()) {
+                    Path temporary = storageService.exportPath(task.getProjectId(), task.getId())
+                            .resolve("tmp").resolve(Path.of(filename).getFileName().toString());
+                    storageService.copyForExport(edit.getGeneratedPath(), temporary,
+                            edit.getMimeType(), task.isStripGps());
+                    zip.putNextEntry(new ZipEntry(filename));
+                    Files.copy(temporary, zip);
+                    zip.closeEntry();
+                    Files.deleteIfExists(temporary);
+                }
+                manifest.add(csv(source.getId()) + "," + csv(source.getOriginalName()) + ","
+                        + csv(effectiveDecision(source, userOperatedAssetIds)) + ","
+                        + csv(userOperatedAssetIds.contains(source.getId()) ? "user"
+                                : source.getRecommendation() == null ? "default" : "ai") + ","
+                        + csv(userOperatedAssetIds.contains(source.getId()) ? source.getDecision().value() : "") + ","
+                        + csv(source.getRecommendation() == null ? "" : source.getRecommendation().value()) + ","
+                        + csv(task.isCopyImages() ? filename : "") + ",aigc," + csv(edit.getId()) + ","
+                        + csv(edit.getPromptUsed()));
                 index++;
                 updateProgress(task.getId(), index);
             }
@@ -219,12 +258,7 @@ public class ExportService {
     }
 
     private String effectiveDecision(Asset asset, Set<String> userOperatedAssetIds) {
-        if (userOperatedAssetIds.contains(asset.getId())) return asset.getDecision().value();
-        return asset.getRecommendation() == null ? "review" : asset.getRecommendation().value();
-    }
-
-    private AssetDecision toDecision(AssetRecommendation recommendation) {
-        return AssetDecision.valueOf(recommendation.name());
+        return EffectiveDecision.of(asset, userOperatedAssetIds).value();
     }
 
     private void updateProgress(String exportId, int processed) {
@@ -287,6 +321,24 @@ public class ExportService {
         return filename.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 
+    private String aigcFilename(AigcEdit edit, Asset source) {
+        String originalName = Path.of(source.getOriginalName() == null ? "image" : source.getOriginalName())
+                .getFileName().toString();
+        int extensionStart = originalName.lastIndexOf('.');
+        String baseName = extensionStart > 0 ? originalName.substring(0, extensionStart) : originalName;
+        return EXPORT_DIRECTORY + "/aigc/"
+                + safeFilename(edit.getId() + "-" + baseName + generatedExtension(edit.getMimeType()));
+    }
+
+    private String generatedExtension(String mimeType) {
+        return switch (mimeType == null ? "" : mimeType.toLowerCase(Locale.ROOT)) {
+            case "image/jpeg" -> ".jpg";
+            case "image/png" -> ".png";
+            case "image/webp" -> ".webp";
+            default -> throw new IllegalStateException("Unsupported generated image type");
+        };
+    }
+
     private String csv(String value) {
         String safe = value == null ? "" : value;
         if (!safe.isEmpty() && "=+-@".indexOf(safe.charAt(0)) >= 0) {
@@ -299,5 +351,6 @@ public class ExportService {
     private record ExportOptions(ExportTask.Selection selection, boolean copyImages,
                                  boolean stripGps, boolean includeManifest) {}
 
-    private record SelectionResult(List<Asset> assets, Set<String> userOperatedAssetIds) {}
+    private record SelectionResult(List<Asset> assets, Set<String> userOperatedAssetIds,
+                                   List<AigcEdit> edits) {}
 }

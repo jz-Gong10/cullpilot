@@ -1,0 +1,10 @@
+{
+  "endpoint": "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+  "http_status": null,
+  "response": {
+    "dry_run": true,
+    "message": "未发送网络请求；已完成图片读取、Base64 编码和脱敏请求保存。"
+  },
+  "downloaded_files": [],
+  "download_errors": []
+}

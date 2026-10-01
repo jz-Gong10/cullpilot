@@ -134,6 +134,28 @@ CREATE TABLE IF NOT EXISTS exports (
     entity_version INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS aigc_edits (
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    project_id VARCHAR(36) NOT NULL,
+    asset_id VARCHAR(36) NOT NULL,
+    prompt_text TEXT NOT NULL,
+    prompt_used TEXT,
+    model VARCHAR(100) NOT NULL,
+    image_size VARCHAR(20) NOT NULL,
+    prompt_extend BOOLEAN NOT NULL,
+    watermark BOOLEAN NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    provider VARCHAR(50),
+    generated_path VARCHAR(500),
+    mime_type VARCHAR(100),
+    size_bytes INTEGER,
+    error_message VARCHAR(500),
+    created_at TIMESTAMP NOT NULL,
+    started_at TIMESTAMP,
+    finished_at TIMESTAMP,
+    entity_version INTEGER NOT NULL DEFAULT 0
+);
+
 -- Project settings are stored in settings_json. New settings such as
 -- contentMode remain backward-compatible without changing this table.
 CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
@@ -154,6 +176,9 @@ CREATE INDEX IF NOT EXISTS idx_decision_history_asset_id ON decision_history(ass
 CREATE INDEX IF NOT EXISTS idx_decision_history_created_at ON decision_history(created_at);
 CREATE INDEX IF NOT EXISTS idx_exports_project_id ON exports(project_id);
 CREATE INDEX IF NOT EXISTS idx_exports_status ON exports(status);
+CREATE INDEX IF NOT EXISTS idx_aigc_edits_project_id ON aigc_edits(project_id);
+CREATE INDEX IF NOT EXISTS idx_aigc_edits_asset_id ON aigc_edits(asset_id);
+CREATE INDEX IF NOT EXISTS idx_aigc_edits_status ON aigc_edits(status);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at ON user_sessions(expires_at);
