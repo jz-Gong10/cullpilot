@@ -22,6 +22,7 @@ Spring Boot 负责项目、图片、文件、任务、分析结果、分组、�
 - Spring Boot 公共接口前缀：/api/v1
 - Python 内部接口前缀：/api/v1/internal
 - JSON 使用 UTF-8，公共接口字段使用 camelCase。
+- 外观问卷接口是例外：稳定标识字段使用 `color_id`、`style_id` 和 `questionnaire_version`。
 - Python 内部接口沿用当前 Pydantic 模型的 snake_case。
 - projectId、assetId、groupId、jobId、exportId 使用 UUID 字符串。
 - 时间使用 UTC RFC 3339，例如 2026-09-26T03:20:00Z。
@@ -797,3 +798,17 @@ Python 配置 `AIGC_API_KEY`、`AIGC_ENDPOINT`、`AIGC_MODEL` 和 `AIGC_TIMEOUT_
 7. 导出任务、下载和项目清理。
 
 这条顺序对应“创建项目 -> 上传 -> 分析 -> 复核 -> 导出”的最小闭环。
+
+## 15. 首次登录外观偏好问卷
+
+注册和登录响应增加 `appearanceOnboardingRequired`。为 `true` 时，前端展示可跳过的问卷；为 `false` 时直接进入应用。外观只保存主题色和组件风格，与亮/暗模式、照片布局相互独立。
+
+- `GET /api/v1/users/me/appearance/onboarding`：返回 `questionnaire_version`、六道题及各选项的 `scores` 和 `colorFamilies`、25 个主题色、15 个组件风格，以及 `onboarding_required`。
+- `POST /api/v1/users/me/appearance/onboarding`：请求 `{ "questionnaire_version": "appearance-v1", "answers": { "q1": "q1_dense", "q2": "q2_square", "q3": "q3_border", "q4": "q4_flat", "q5": "q5_professional", "q6": "q6_clear" }, "apply": true }`。响应含 `recommended`、至多两个 `alternatives`、`score_detail`、`questionnaire_version` 和 `applied`。`apply=false` 仅保存问卷结果，不修改当前主题。
+- `POST /api/v1/users/me/appearance/onboarding/skip`：跳过首次问卷，当前外观保持默认 `c01` / `flat`，以后登录不再提示。
+- `GET /api/v1/users/me/appearance`：返回当前 `color_id`、`style_id`、`source`、`questionnaire_version`、`onboarding_status`、`onboarding_required` 和 `updated_at`。
+- `PUT /api/v1/users/me/appearance`：请求 `{ "color_id": "c05", "style_id": "minimal" }`，把来源改为 `manual`。手动设置后，普通问卷提交返回 409；用户主动重新开始问卷时提交 `restart=true` 才能再次推荐和应用。
+
+颜色、风格均使用目录中固定的字符串 ID。主题色元数据包含 `id`、`name`、`family`、`hue`、`hex`、`textColor` 和 `contrastRatio`；客户端按 ID 映射到自身主题实现，不按数组下标持久化。历史问卷记录保存当时的答案、分数、推荐和版本；修改题目或权重时应新建版本，不能原地改动 `appearance-v1`。
+
+当前仓库不包含前端源码。这里的 `c01`～`c25` 是后端新建的稳定色表；前端接入前必须逐项核对现有 25 色的名称、hue 和实际色值，再固定双方的 ID 映射。首次登录弹层由前端根据 `appearanceOnboardingRequired` 展示。

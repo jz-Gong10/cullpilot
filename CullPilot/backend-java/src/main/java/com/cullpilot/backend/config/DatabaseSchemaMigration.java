@@ -17,6 +17,30 @@ public class DatabaseSchemaMigration {
 
     @PostConstruct
     void migrate() {
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS user_appearances (
+                    user_id VARCHAR(36) NOT NULL PRIMARY KEY,
+                    color_id VARCHAR(3) NOT NULL,
+                    style_id VARCHAR(30) NOT NULL,
+                    source VARCHAR(20) NOT NULL,
+                    questionnaire_version VARCHAR(40),
+                    onboarding_status VARCHAR(20) NOT NULL,
+                    updated_at TIMESTAMP NOT NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS appearance_questionnaire_records (
+                    id VARCHAR(36) NOT NULL PRIMARY KEY,
+                    user_id VARCHAR(36) NOT NULL,
+                    questionnaire_version VARCHAR(40) NOT NULL,
+                    answers_json TEXT NOT NULL,
+                    score_json TEXT NOT NULL,
+                    recommended_appearance_json TEXT NOT NULL,
+                    applied BOOLEAN NOT NULL,
+                    completed_at TIMESTAMP NOT NULL
+                )
+                """);
+        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_appearance_records_user_id ON appearance_questionnaire_records(user_id)");
         Integer ownerColumnCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM pragma_table_info('projects') WHERE name = 'owner_id'",
                 Integer.class);

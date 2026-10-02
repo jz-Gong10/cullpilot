@@ -31,7 +31,8 @@ public final class AuthResponses {
             UserResponse user,
             String tokenType,
             String accessToken,
-            Instant expiresAt) {
+            Instant expiresAt,
+            boolean appearanceOnboardingRequired) {
 
         @Override
         public String toString() {

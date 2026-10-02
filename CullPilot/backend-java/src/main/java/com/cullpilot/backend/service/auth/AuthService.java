@@ -11,6 +11,8 @@ import com.cullpilot.backend.domain.user.UserSession;
 import com.cullpilot.backend.domain.user.UserStatus;
 import com.cullpilot.backend.repository.user.UserRepository;
 import com.cullpilot.backend.repository.user.UserSessionRepository;
+import com.cullpilot.backend.repository.user.UserAppearanceRepository;
+import com.cullpilot.backend.service.appearance.AppearanceCatalog;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -34,16 +36,19 @@ public class AuthService {
     private final UserSessionRepository sessionRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthProperties properties;
+    private final UserAppearanceRepository appearanceRepository;
 
     public AuthService(
             UserRepository userRepository,
             UserSessionRepository sessionRepository,
             PasswordEncoder passwordEncoder,
-            AuthProperties properties) {
+            AuthProperties properties,
+            UserAppearanceRepository appearanceRepository) {
         this.userRepository = userRepository;
         this.sessionRepository = sessionRepository;
         this.passwordEncoder = passwordEncoder;
         this.properties = properties;
+        this.appearanceRepository = appearanceRepository;
     }
 
     @Transactional
@@ -123,6 +128,10 @@ public class AuthService {
     }
 
     private AuthResponse createAuthResponse(User user) {
+        appearanceRepository.ensureDefault(user.getId(), AppearanceCatalog.DEFAULT_COLOR_ID,
+                AppearanceCatalog.DEFAULT_STYLE_ID);
+        boolean onboardingRequired = appearanceRepository.find(user.getId())
+                .map(item -> "pending".equals(item.onboardingStatus())).orElse(true);
         Instant now = Instant.now();
         Instant expiresAt = now.plus(properties.getAccessTokenTtl());
         String rawToken = createToken();
@@ -133,7 +142,8 @@ public class AuthService {
                 expiresAt,
                 now);
         sessionRepository.save(session);
-        return new AuthResponse(UserResponse.from(user), "Bearer", rawToken, expiresAt);
+        return new AuthResponse(UserResponse.from(user), "Bearer", rawToken, expiresAt,
+                onboardingRequired);
     }
 
     private User findActiveUser(String userId) {

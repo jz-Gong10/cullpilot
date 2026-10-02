@@ -15,6 +15,8 @@ tags:
     description: 项目的创建、查询、设置修改和删除
   - name: 用户认证
     description: 注册、登录、当前用户和退出登录
+  - name: 外观偏好
+    description: 首次登录问卷、主题色和组件风格设置；不包含亮暗模式或照片布局
   - name: 图片资源
     description: 图片上传、查询、预览和人工决策
   - name: 分析任务
@@ -145,6 +147,150 @@ paths:
                 $ref: '#/components/schemas/LogoutResponseEnvelope'
         '401':
           description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users/me/appearance/onboarding:
+    get:
+      tags:
+        - 外观偏好
+      summary: 获取当前版本的外观偏好问卷
+      operationId: getAppearanceOnboarding
+      description: 返回六道单选题、选项评分、25 个主题色及 15 个组件风格。登录响应的 appearanceOnboardingRequired 为 true 时展示问卷。
+      responses:
+        '200':
+          description: 问卷及外观目录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppearanceOnboardingEnvelope'
+        '401':
+          description: 未登录或 Token 已过期
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+        - 外观偏好
+      summary: 提交问卷并生成外观推荐
+      operationId: submitAppearanceOnboarding
+      description: 六题均须单选。apply=false 只保存问卷结果；手动选择外观后，只有用户主动重做并传 restart=true 才允许再次提交。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppearanceOnboardingRequest'
+            example:
+              questionnaire_version: appearance-v1
+              answers:
+                q1: q1_dense
+                q2: q2_square
+                q3: q3_border
+                q4: q4_flat
+                q5: q5_professional
+                q6: q6_clear
+              apply: true
+              restart: false
+      responses:
+        '200':
+          description: 推荐结果；applied 表示是否已更新当前外观
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppearanceRecommendationEnvelope'
+        '401':
+          description: 未登录或 Token 已过期
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 当前外观是手动选择，需显式 restart=true；错误码 MANUAL_APPEARANCE_PROTECTED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 问卷版本、答案或必填字段无效；错误码 INVALID_APPEARANCE_ANSWERS 或 VALIDATION_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users/me/appearance/onboarding/skip:
+    post:
+      tags:
+        - 外观偏好
+      summary: 跳过首次外观问卷
+      operationId: skipAppearanceOnboarding
+      description: 保留默认 c01 / flat，不再在后续登录时提示问卷；不会覆盖已有手动选择。
+      responses:
+        '200':
+          description: 跳过后的当前外观
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentAppearanceEnvelope'
+        '401':
+          description: 未登录或 Token 已过期
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users/me/appearance:
+    get:
+      tags:
+        - 外观偏好
+      summary: 获取当前用户外观
+      operationId: getCurrentAppearance
+      responses:
+        '200':
+          description: 当前主题色、组件风格及问卷状态
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentAppearanceEnvelope'
+        '401':
+          description: 未登录或 Token 已过期
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags:
+        - 外观偏好
+      summary: 手动修改主题色和组件风格
+      operationId: updateCurrentAppearance
+      description: 仅接受目录中的稳定字符串 ID。保存后 source 变为 manual，普通问卷提交不会自动覆盖。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAppearanceRequest'
+            example:
+              color_id: c05
+              style_id: minimal
+      responses:
+        '200':
+          description: 更新后的当前外观
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentAppearanceEnvelope'
+        '401':
+          description: 未登录或 Token 已过期
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 未知的色彩或风格 ID；错误码 INVALID_APPEARANCE_ID，缺少必填字段时为 VALIDATION_ERROR
           content:
             application/json:
               schema:
@@ -2184,6 +2330,287 @@ components:
         password:
           type: string
           format: password
+    AppearanceColorId:
+      type: string
+      description: 稳定主题色 ID，不是前端数组下标。
+      enum: [c01, c02, c03, c04, c05, c06, c07, c08, c09, c10, c11, c12, c13, c14, c15, c16, c17, c18, c19, c20, c21, c22, c23, c24, c25]
+    AppearanceStyleId:
+      type: string
+      description: 稳定组件风格 ID，不是前端数组下标。
+      enum: [flat, outline, rounded, compact, soft, elevated, glass, inset, bold, editorial, technical, material, retro, minimal, contrast]
+    AppearanceColorFamily:
+      type: string
+      enum: [blue, teal, green, violet, coral, amber, neutral]
+    AppearanceQuestionOption:
+      type: object
+      required: [id, label, scores, colorFamilies]
+      properties:
+        id:
+          type: string
+          example: q1_dense
+        label:
+          type: string
+          example: 一屏看更多内容
+        scores:
+          type: object
+          description: 对六个偏好维度的加分；第 6 题为空对象。
+          additionalProperties:
+            type: integer
+          example: {density: 2}
+        colorFamilies:
+          type: array
+          description: 第 6 题偏好的色系，其他题为空数组。
+          items:
+            $ref: '#/components/schemas/AppearanceColorFamily'
+          example: []
+    AppearanceQuestion:
+      type: object
+      required: [id, title, options]
+      properties:
+        id:
+          type: string
+          enum: [q1, q2, q3, q4, q5, q6]
+        title:
+          type: string
+        options:
+          type: array
+          minItems: 3
+          items:
+            $ref: '#/components/schemas/AppearanceQuestionOption'
+    AppearanceThemeColor:
+      type: object
+      required: [id, name, family, hue, hex, textColor, contrastRatio]
+      properties:
+        id:
+          $ref: '#/components/schemas/AppearanceColorId'
+        name:
+          type: string
+          example: 晴蓝
+        family:
+          $ref: '#/components/schemas/AppearanceColorFamily'
+        hue:
+          type: integer
+          minimum: 0
+          maximum: 360
+          description: 对应 hex 的 HSB 色相角度。
+          example: 221
+        hex:
+          type: string
+          pattern: '^#[0-9A-F]{6}$'
+          example: '#2563EB'
+        textColor:
+          type: string
+          description: 在该主题色背景上可读的文字颜色。
+          example: '#FFFFFF'
+        contrastRatio:
+          type: number
+          format: double
+          minimum: 4.5
+          description: 主题色背景与 textColor 的 WCAG 对比度。
+          example: 5.17
+    AppearanceStyle:
+      type: object
+      required: [id, name, vector]
+      properties:
+        id:
+          $ref: '#/components/schemas/AppearanceStyleId'
+        name:
+          type: string
+          example: 技术
+        vector:
+          type: object
+          description: 风格在 density、roundness、structure、depth、expressive、contrast 六个维度上的固定向量。
+          required: [density, roundness, structure, depth, expressive, contrast]
+          properties:
+            density: {type: integer, minimum: -2, maximum: 2}
+            roundness: {type: integer, minimum: -2, maximum: 2}
+            structure: {type: integer, minimum: -2, maximum: 2}
+            depth: {type: integer, minimum: -2, maximum: 2}
+            expressive: {type: integer, minimum: -2, maximum: 2}
+            contrast: {type: integer, minimum: -2, maximum: 2}
+    AppearanceOnboarding:
+      type: object
+      required: [questionnaire_version, questions, colors, styles, onboarding_required]
+      properties:
+        questionnaire_version:
+          type: string
+          example: appearance-v1
+        questions:
+          type: array
+          minItems: 6
+          maxItems: 6
+          items:
+            $ref: '#/components/schemas/AppearanceQuestion'
+        colors:
+          type: array
+          minItems: 25
+          maxItems: 25
+          items:
+            $ref: '#/components/schemas/AppearanceThemeColor'
+        styles:
+          type: array
+          minItems: 15
+          maxItems: 15
+          items:
+            $ref: '#/components/schemas/AppearanceStyle'
+        onboarding_required:
+          type: boolean
+          description: 当前是否需要展示首次登录问卷。
+    AppearanceOnboardingRequest:
+      type: object
+      required: [questionnaire_version, answers, apply]
+      properties:
+        questionnaire_version:
+          type: string
+          example: appearance-v1
+        answers:
+          type: object
+          description: 每题一个选项 ID；选项 ID 以 GET 问卷返回值为准。
+          required: [q1, q2, q3, q4, q5, q6]
+          additionalProperties: false
+          properties:
+            q1: {type: string, enum: [q1_dense, q1_balanced, q1_relaxed]}
+            q2: {type: string, enum: [q2_square, q2_subtle, q2_round]}
+            q3: {type: string, enum: [q3_border, q3_fill, q3_open]}
+            q4: {type: string, enum: [q4_flat, q4_subtle, q4_floating]}
+            q5: {type: string, enum: [q5_professional, q5_soft, q5_expressive]}
+            q6: {type: string, enum: [q6_clear, q6_natural, q6_energetic, q6_creative, q6_quiet]}
+        apply:
+          type: boolean
+          description: 是否立刻把推荐结果设为当前外观。
+        restart:
+          type: boolean
+          default: false
+          description: 已手动修改外观时，只有用户主动重新开始问卷才传 true。
+    AppearanceCombination:
+      type: object
+      required: [color_id, style_id]
+      properties:
+        color_id:
+          $ref: '#/components/schemas/AppearanceColorId'
+        style_id:
+          $ref: '#/components/schemas/AppearanceStyleId'
+    AppearanceStyleScore:
+      type: object
+      required: [id, total, match, compatibility, conflict]
+      properties:
+        id:
+          $ref: '#/components/schemas/AppearanceStyleId'
+        total: {type: number, format: double}
+        match: {type: number, format: double}
+        compatibility: {type: number, format: double}
+        conflict: {type: number, format: double}
+    AppearanceScoreDetail:
+      type: object
+      required: [dimensions, preferred_families, style_scores, family_scores, selected_color_contrast_ratio, selected_text_color]
+      properties:
+        dimensions:
+          type: object
+          required: [density, roundness, structure, depth, expressive, contrast]
+          properties:
+            density: {type: integer}
+            roundness: {type: integer}
+            structure: {type: integer}
+            depth: {type: integer}
+            expressive: {type: integer}
+            contrast: {type: integer}
+        preferred_families:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppearanceColorFamily'
+        style_scores:
+          type: array
+          description: 按 total 降序排列，便于解释候选风格。
+          items:
+            $ref: '#/components/schemas/AppearanceStyleScore'
+        family_scores:
+          type: object
+          description: 每个色系的直接偏好分与风格兼容性软加分之和。
+          additionalProperties:
+            type: number
+            format: double
+        selected_color_contrast_ratio:
+          type: number
+          format: double
+          minimum: 4.5
+        selected_text_color:
+          type: string
+          example: '#FFFFFF'
+    AppearanceRecommendation:
+      type: object
+      required: [recommended, alternatives, score_detail, questionnaire_version, applied]
+      properties:
+        recommended:
+          $ref: '#/components/schemas/AppearanceCombination'
+        alternatives:
+          type: array
+          maxItems: 2
+          description: 风格得分与第一名相差不足 2 分时返回的备选组合。
+          items:
+            $ref: '#/components/schemas/AppearanceCombination'
+        score_detail:
+          $ref: '#/components/schemas/AppearanceScoreDetail'
+        questionnaire_version:
+          type: string
+          example: appearance-v1
+        applied:
+          type: boolean
+    CurrentAppearance:
+      type: object
+      required: [color_id, style_id, source, questionnaire_version, onboarding_status, onboarding_required, updated_at]
+      properties:
+        color_id:
+          $ref: '#/components/schemas/AppearanceColorId'
+        style_id:
+          $ref: '#/components/schemas/AppearanceStyleId'
+        source:
+          type: string
+          enum: [default, onboarding, manual]
+        questionnaire_version:
+          type: string
+          nullable: true
+          description: 当前外观所应用的问卷版本；默认或未应用推荐时为 null。
+          example: appearance-v1
+        onboarding_status:
+          type: string
+          enum: [pending, completed, skipped]
+        onboarding_required:
+          type: boolean
+        updated_at:
+          type: string
+          format: date-time
+    UpdateAppearanceRequest:
+      type: object
+      required: [color_id, style_id]
+      properties:
+        color_id:
+          $ref: '#/components/schemas/AppearanceColorId'
+        style_id:
+          $ref: '#/components/schemas/AppearanceStyleId'
+    AppearanceOnboardingEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/AppearanceOnboarding'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+    AppearanceRecommendationEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/AppearanceRecommendation'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+    CurrentAppearanceEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/CurrentAppearance'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
     User:
       type: object
       required:
@@ -2216,6 +2643,7 @@ components:
         - tokenType
         - accessToken
         - expiresAt
+        - appearanceOnboardingRequired
       properties:
         user:
           $ref: '#/components/schemas/User'
@@ -2228,6 +2656,9 @@ components:
         expiresAt:
           type: string
           format: date-time
+        appearanceOnboardingRequired:
+          type: boolean
+          description: 首次登录是否展示可跳过的外观偏好问卷。
     AuthResponseEnvelope:
       type: object
       required:

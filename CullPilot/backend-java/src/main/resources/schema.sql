@@ -32,6 +32,27 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     CONSTRAINT uq_user_sessions_token_hash UNIQUE (token_hash)
 );
 
+CREATE TABLE IF NOT EXISTS user_appearances (
+    user_id VARCHAR(36) NOT NULL PRIMARY KEY,
+    color_id VARCHAR(3) NOT NULL,
+    style_id VARCHAR(30) NOT NULL,
+    source VARCHAR(20) NOT NULL,
+    questionnaire_version VARCHAR(40),
+    onboarding_status VARCHAR(20) NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS appearance_questionnaire_records (
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    questionnaire_version VARCHAR(40) NOT NULL,
+    answers_json TEXT NOT NULL,
+    score_json TEXT NOT NULL,
+    recommended_appearance_json TEXT NOT NULL,
+    applied BOOLEAN NOT NULL,
+    completed_at TIMESTAMP NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS assets (
     id VARCHAR(36) NOT NULL PRIMARY KEY,
     project_id VARCHAR(36) NOT NULL,
@@ -182,3 +203,4 @@ CREATE INDEX IF NOT EXISTS idx_aigc_edits_status ON aigc_edits(status);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at ON user_sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_appearance_records_user_id ON appearance_questionnaire_records(user_id);
