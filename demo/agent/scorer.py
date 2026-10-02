@@ -29,8 +29,13 @@ def _filter_photo(feature: ImageFeatures, quality: QualityScore, face: FaceAnaly
     reasons = []
     if filters.get("min_quality") is not None and quality.overall_score < float(filters["min_quality"]):
         reasons.append("综合质量低于筛选阈值")
-    if filters.get("min_sharpness") is not None and feature.sharpness < float(filters["min_sharpness"]):
-        reasons.append("清晰度低于筛选阈值")
+    if filters.get("min_sharpness") is not None:
+        sharpness_floor = float(filters["min_sharpness"])
+        blur_quality_floor = float(filters.get("blur_quality_floor", 0.60))
+
+        # Only treat blur as severe when both sharpness and overall quality are low.
+        if feature.sharpness < sharpness_floor and quality.overall_score < blur_quality_floor:
+            reasons.append("清晰度与综合质量均低于底线")
     if filters.get("max_highlight_clip") is not None and feature.highlight_clip > float(filters["max_highlight_clip"]):
         reasons.append("过曝比例超过筛选阈值")
     if filters.get("max_shadow_clip") is not None and feature.shadow_clip > float(filters["max_shadow_clip"]):

@@ -187,7 +187,10 @@ def analyze(request: AnalyzeRequest, storage_root: Path | None = None) -> Analyz
     )
     filters = {}
     if constraints.get("avoidSevereBlur", True):
-        filters["min_sharpness"] = 0.15 if constraints.get("allowMildMotionBlur", True) else 0.30
+        filters["min_sharpness"] = (
+            0.15 if constraints.get("allowMildMotionBlur", True) else 0.30
+        )
+        filters["blur_quality_floor"] = 0.60
     if constraints.get("avoidSevereOverexposure", True):
         filters["max_highlight_clip"] = 0.25
     features_by_id = {item.asset_id: item for item in features}
